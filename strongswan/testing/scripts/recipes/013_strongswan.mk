@@ -54,8 +54,6 @@ CONFIG_OPTS = \
 	--enable-imv-os \
 	--enable-imc-attestation \
 	--enable-imv-attestation \
-	--enable-imc-swid \
-	--enable-imv-swid \
 	--enable-imc-swima \
 	--enable-imv-swima \
 	--enable-imc-hcd \
@@ -64,6 +62,7 @@ CONFIG_OPTS = \
 	--enable-sqlite \
 	--enable-attr-sql \
 	--enable-mediation \
+	--enable-botan \
 	--enable-openssl \
 	--enable-blowfish \
 	--enable-kernel-pfkey \
@@ -106,7 +105,8 @@ CONFIG_OPTS = \
 	--enable-newhope \
 	--enable-systemd \
 	--enable-counters \
-	--enable-save-keys
+	--enable-save-keys \
+	--enable-python-eggs-install
 
 export ADA_PROJECT_PATH=/usr/local/ada/lib/gnat
 
@@ -127,3 +127,5 @@ build: configure
 
 install: build
 	cd $(BUILDDIR) && make -j install
+	# for Python-based updown scripts
+	pip install python-daemon

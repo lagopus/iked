@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -43,10 +43,12 @@ struct private_gcrypt_plugin_t {
 	gcrypt_plugin_t public;
 };
 
+#if GCRYPT_VERSION_NUMBER < 0x010600
 /**
  * Define gcrypt multi-threading callbacks as gcry_threads_pthread
  */
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
+#endif
 
 METHOD(plugin_t, get_name, char*,
 	private_gcrypt_plugin_t *this)
@@ -68,6 +70,9 @@ METHOD(plugin_t, get_features, int,
 			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_CBC, 16),
 			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_CBC, 24),
 			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_CBC, 32),
+			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_ECB, 16),
+			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_ECB, 24),
+			PLUGIN_PROVIDE(CRYPTER, ENCR_AES_ECB, 32),
 			/* gcrypt only supports 128 bit blowfish */
 			PLUGIN_PROVIDE(CRYPTER, ENCR_BLOWFISH, 16),
 #ifdef HAVE_GCRY_CIPHER_CAMELLIA
@@ -163,7 +168,9 @@ plugin_t *gcrypt_plugin_create()
 {
 	private_gcrypt_plugin_t *this;
 
+#if GCRYPT_VERSION_NUMBER < 0x010600
 	gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
+#endif
 
 	if (!gcry_check_version(GCRYPT_VERSION))
 	{

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011-2015 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * Copyright (C) 2010 Martin Willi
  * Copyright (C) 2010 revosec AG
@@ -49,7 +49,7 @@ ENUM_NEXT(ck_rv_names, CKR_ATTRIBUTE_READ_ONLY, CKR_ATTRIBUTE_VALUE_INVALID,
 	"ATTRIBUTE_VALUE_INVALID");
 ENUM_NEXT(ck_rv_names, CKR_DATA_INVALID, CKR_DATA_LEN_RANGE,
 		CKR_ATTRIBUTE_VALUE_INVALID,
-	"DATA_INVALID"
+	"DATA_INVALID",
 	"DATA_LEN_RANGE");
 ENUM_NEXT(ck_rv_names, CKR_DEVICE_ERROR, CKR_DEVICE_REMOVED,
 		CKR_DATA_LEN_RANGE,
@@ -540,6 +540,7 @@ ENUM_NEXT(ck_attr_names, CKA_HW_FEATURE_TYPE, CKA_HAS_RESET,
 	"HAS_RESET");
 ENUM_NEXT(ck_attr_names, CKA_PIXEL_X, CKA_BITS_PER_PIXEL, CKA_HAS_RESET,
 	"PIXEL_X",
+	"PIXEL_Y",
 	"RESOLUTION",
 	"CHAR_ROWS",
 	"CHAR_COLUMNS",
@@ -899,8 +900,8 @@ METHOD(pkcs11_library_t, create_mechanism_enumerator, enumerator_t*,
 		return enumerator_create_empty();
 	}
 	enumerator->mechs = malloc(sizeof(CK_MECHANISM_TYPE) * enumerator->count);
-	enumerator->lib->f->C_GetMechanismList(slot, enumerator->mechs,
-										   &enumerator->count);
+	rv = enumerator->lib->f->C_GetMechanismList(slot, enumerator->mechs,
+												&enumerator->count);
 	if (rv != CKR_OK)
 	{
 		DBG1(DBG_CFG, "C_GetMechanismList() failed: %N", ck_rv_names, rv);

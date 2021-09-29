@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2012 Adrian-Ken Rueegsegger
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,6 +20,10 @@
 
 #ifndef NONCE_NONCEG_H_
 #define NONCE_NONCEG_H_
+
+#ifndef NONCE_RNG_QUALITY
+#define NONCE_RNG_QUALITY RNG_WEAK
+#endif
 
 typedef struct nonce_nonceg_t nonce_nonceg_t;
 

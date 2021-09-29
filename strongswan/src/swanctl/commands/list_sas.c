@@ -166,12 +166,24 @@ CALLBACK(child_sas, int,
 		printf("    in  %s%s%s", child->get(child, "spi-in"),
 			child->get(child, "cpi-in") ? "/" : "",
 			child->get(child, "cpi-in") ?: "");
-		if (child->get(child, "mark-in"))
+		if (child->get(child, "mark-in") || child->get(child, "if-id-in"))
 		{
-			printf(" (0x%s", child->get(child, "mark-in"));
-			if (child->get(child, "mark-mask-in"))
+			printf(" (");
+			if (child->get(child, "mark-in"))
 			{
-				printf("/0x%s", child->get(child, "mark-mask-in"));
+				printf("0x%s", child->get(child, "mark-in"));
+				if (child->get(child, "mark-mask-in"))
+				{
+					printf("/0x%s", child->get(child, "mark-mask-in"));
+				}
+			}
+			else
+			{
+				printf("-");
+			}
+			if (child->get(child, "if-id-in"))
+			{
+				printf("|0x%s", child->get(child, "if-id-in"));
 			}
 			printf(")");
 		}
@@ -186,12 +198,24 @@ CALLBACK(child_sas, int,
 		printf("    out %s%s%s", child->get(child, "spi-out"),
 			child->get(child, "cpi-out") ? "/" : "",
 			child->get(child, "cpi-out") ?: "");
-		if (child->get(child, "mark-out"))
+		if (child->get(child, "mark-out") || child->get(child, "if-id-out"))
 		{
-			printf(" (0x%s", child->get(child, "mark-out"));
-			if (child->get(child, "mark-mask-out"))
+			printf(" (");
+			if (child->get(child, "mark-out"))
 			{
-				printf("/0x%s", child->get(child, "mark-mask-out"));
+				printf("0x%s", child->get(child, "mark-out"));
+				if (child->get(child, "mark-mask-out"))
+				{
+					printf("/0x%s", child->get(child, "mark-mask-out"));
+				}
+			}
+			else
+			{
+				printf("-");
+			}
+			if (child->get(child, "if-id-out"))
+			{
+				printf("|0x%s", child->get(child, "if-id-out"));
 			}
 			printf(")");
 		}
@@ -266,6 +290,10 @@ CALLBACK(ike_sa, int,
 			}
 			printf("/%s", ike->get(ike, "prf-alg"));
 			printf("/%s", ike->get(ike, "dh-group"));
+			if (streq(ike->get(ike, "ppk"), "yes"))
+			{
+				printf("/PPK");
+			}
 			printf("\n");
 		}
 

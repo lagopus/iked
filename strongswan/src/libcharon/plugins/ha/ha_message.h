@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -156,6 +156,8 @@ enum ha_message_attribute_t {
 	HA_PSK,
 	/** chunk_t, IV for next IKEv1 message */
 	HA_IV,
+	/** uint16_t, auth_method_t for IKEv1 key derivation */
+	HA_AUTH_METHOD,
 };
 
 /**

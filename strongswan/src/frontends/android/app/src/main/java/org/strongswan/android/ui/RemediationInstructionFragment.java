@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2013-2016 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,7 +16,6 @@
 package org.strongswan.android.ui;
 
 import android.os.Bundle;
-import android.support.v4.app.ListFragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,6 +25,8 @@ import android.widget.TextView;
 
 import org.strongswan.android.R;
 import org.strongswan.android.logic.imc.RemediationInstruction;
+
+import androidx.fragment.app.ListFragment;
 
 public class RemediationInstructionFragment extends ListFragment
 {

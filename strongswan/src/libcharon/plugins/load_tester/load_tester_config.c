@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -686,8 +686,12 @@ static peer_cfg_t* generate_config(private_load_tester_config_t *this, uint num)
 	ike_cfg_t *ike_cfg;
 	child_cfg_t *child_cfg;
 	peer_cfg_t *peer_cfg;
-	char local[32], *remote;
+	char local[32];
 	host_t *addr;
+	ike_cfg_create_t ike = {
+		.version = this->version,
+		.remote_port = IKEV2_UDP_PORT,
+	};
 	peer_cfg_create_t peer = {
 		.cert_policy = CERT_SEND_IF_ASKED,
 		.unique = UNIQUE_NO,
@@ -726,29 +730,26 @@ static peer_cfg_t* generate_config(private_load_tester_config_t *this, uint num)
 		{
 			snprintf(local, sizeof(local), "%s", this->initiator);
 		}
-		remote = this->responder;
+		ike.remote = this->responder;
 	}
 	else
 	{
 		snprintf(local, sizeof(local), "%s", this->responder);
-		remote = this->initiator;
+		ike.remote = this->initiator;
 	}
 
+	ike.local = local;
 	if (this->port && num)
 	{
-		ike_cfg = ike_cfg_create(this->version, TRUE, FALSE,
-								 local, this->port + num - 1,
-								 remote, IKEV2_NATT_PORT,
-								 FRAGMENTATION_NO, 0);
+		ike.local_port = this->port + num - 1;
+		ike.remote_port = IKEV2_NATT_PORT;
 	}
 	else
 	{
-		ike_cfg = ike_cfg_create(this->version, TRUE, FALSE, local,
-								 charon->socket->get_port(charon->socket, FALSE),
-								 remote, IKEV2_UDP_PORT,
-								 FRAGMENTATION_NO, 0);
+		ike.local_port = charon->socket->get_port(charon->socket, FALSE);
 	}
-	ike_cfg->add_proposal(ike_cfg, this->proposal->clone(this->proposal));
+	ike_cfg = ike_cfg_create(&ike);
+	ike_cfg->add_proposal(ike_cfg, this->proposal->clone(this->proposal, 0));
 	peer_cfg = peer_cfg_create("load-test", ike_cfg, &peer);
 
 	if (this->vip)
@@ -783,7 +784,7 @@ static peer_cfg_t* generate_config(private_load_tester_config_t *this, uint num)
 	}
 
 	child_cfg = child_cfg_create("load-test", &child);
-	child_cfg->add_proposal(child_cfg, this->esp->clone(this->esp));
+	child_cfg->add_proposal(child_cfg, this->esp->clone(this->esp, 0));
 
 	if (num)
 	{	/* initiator */
@@ -937,7 +938,6 @@ load_tester_config_t *load_tester_config_create()
 		.leases = hashtable_create((hashtable_hash_t)hash,
 								   (hashtable_equals_t)equals, 256),
 		.mutex = mutex_create(MUTEX_TYPE_DEFAULT),
-		.num = 1,
 		.unique_port = UNIQUE_PORT_START,
 	);
 

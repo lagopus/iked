@@ -323,7 +323,7 @@ defines the action to take if the remote peer unexpectedly closes a CHILD_SA
 for meaning of values).
 A
 .B closeaction should not be
-used if the peer uses reauthentication or uniquids checking, as these events
+used if the peer uses reauthentication or uniqueids checking, as these events
 might trigger the defined action when not desired.
 .TP
 .BR compress " = yes | " no
@@ -537,10 +537,6 @@ negotiate a connection, or a replacement for one, before giving up
 The value \fB%forever\fP
 means 'never give up'.
 Relevant only locally, other end need not agree on it.
-.TP
-.B keylife
-synonym for
-.BR lifetime .
 .TP
 .BR left " = <ip address> | <fqdn> | " %any " | <range> | <subnet> "
 The IP address of the left participant's public-network interface
@@ -1134,10 +1130,6 @@ The value
 will suppress randomization.
 Relevant only locally, other end need not agree on it. Also see EXPIRY/REKEY
 below.
-.TP
-.B rekeymargin
-synonym for
-.BR margintime .
 .TP
 .BR replay_window " = " \-1 " | <number>"
 The IPsec replay window size for this connection. With the default of \-1

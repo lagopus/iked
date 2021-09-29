@@ -167,6 +167,7 @@ static bool lookup_uid_gid()
 /**
  * Handle SIGSEGV/SIGILL signals raised by threads
  */
+#ifndef DISABLE_SIGNAL_HANDLER
 static void segv_handler(int signal)
 {
 	backtrace_t *backtrace;
@@ -180,6 +181,7 @@ static void segv_handler(int signal)
 	DBG1(DBG_DMN, "killing ourself, received critical signal");
 	abort();
 }
+#endif /* DISABLE_SIGNAL_HANDLER */
 
 /**
  * Check/create PID file, return TRUE if already running
@@ -204,7 +206,7 @@ static bool check_pidfile()
 			}
 			fclose(pidfile);
 			pidfile = NULL;
-			if (pid && kill(pid, 0) == 0)
+			if (pid && pid != getpid() && kill(pid, 0) == 0)
 			{
 				DBG1(DBG_DMN, "charon already running ('"PID_FILE"' exists)");
 				return TRUE;
@@ -231,9 +233,24 @@ static bool check_pidfile()
 			DBG1(DBG_LIB, "setting FD_CLOEXEC for '"PID_FILE"' failed: %s",
 				 strerror(errno));
 		}
-		ignore_result(fchown(fd,
-							 lib->caps->get_uid(lib->caps),
-							 lib->caps->get_gid(lib->caps)));
+		/* Only change owner of the pidfile if we have CAP_CHOWN. Otherwise,
+		 * attempt to change group of pidfile to group under which charon
+		 * runs after dropping caps. This requires the user that charon
+		 * starts as to:
+		 * a) Have write access to the socket dir.
+		 * b) Belong to the group that charon will run under after dropping
+		 *    caps. */
+		if (lib->caps->check(lib->caps, CAP_CHOWN))
+		{
+			ignore_result(fchown(fd,
+								 lib->caps->get_uid(lib->caps),
+								 lib->caps->get_gid(lib->caps)));
+		}
+		else
+		{
+			ignore_result(fchown(fd, -1,
+								 lib->caps->get_gid(lib->caps)));
+		}
 		fprintf(pidfile, "%d\n", getpid());
 		fflush(pidfile);
 		return FALSE;
@@ -423,17 +440,22 @@ int main(int argc, char *argv[])
 		goto deinit;
 	}
 
-	/* add handler for SEGV and ILL,
+	/* add handler for fatal signals,
 	 * INT, TERM and HUP are handled by sigwaitinfo() in run() */
-	action.sa_handler = segv_handler;
 	action.sa_flags = 0;
 	sigemptyset(&action.sa_mask);
 	sigaddset(&action.sa_mask, SIGINT);
 	sigaddset(&action.sa_mask, SIGTERM);
 	sigaddset(&action.sa_mask, SIGHUP);
+
+	/* optionally let the external system handle fatal signals */
+#ifndef DISABLE_SIGNAL_HANDLER
+	action.sa_handler = segv_handler;
 	sigaction(SIGSEGV, &action, NULL);
 	sigaction(SIGILL, &action, NULL);
 	sigaction(SIGBUS, &action, NULL);
+#endif /* DISABLE_SIGNAL_HANDLER */
+
 	action.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &action, NULL);
 

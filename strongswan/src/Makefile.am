@@ -88,10 +88,6 @@ if USE_CONFTEST
   SUBDIRS += conftest
 endif
 
-if USE_DUMM
-  SUBDIRS += dumm
-endif
-
 if USE_FAST
   SUBDIRS += libfast
 endif
@@ -146,4 +142,8 @@ endif
 
 if USE_TPM
   SUBDIRS += tpm_extendpcr
+endif
+
+if USE_KERNEL_NETLINK
+  SUBDIRS += xfrmi
 endif

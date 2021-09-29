@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2005-2006 Martin Willi
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -47,13 +47,14 @@ ENUM_NEXT(encryption_algorithm_names, ENCR_CAMELLIA_CBC, ENCR_CHACHA20_POLY1305,
 	"CAMELLIA_CCM_12",
 	"CAMELLIA_CCM_16",
 	"CHACHA20_POLY1305");
-ENUM_NEXT(encryption_algorithm_names, ENCR_UNDEFINED, ENCR_RC2_CBC, ENCR_CHACHA20_POLY1305,
+ENUM_NEXT(encryption_algorithm_names, ENCR_UNDEFINED, ENCR_AES_ECB, ENCR_CHACHA20_POLY1305,
 	"UNDEFINED",
 	"DES_ECB",
 	"SERPENT_CBC",
 	"TWOFISH_CBC",
-	"RC2_CBC");
-ENUM_END(encryption_algorithm_names, ENCR_RC2_CBC);
+	"RC2_CBC",
+	"AES_ECB");
+ENUM_END(encryption_algorithm_names, ENCR_AES_ECB);
 
 /*
  * Described in header.

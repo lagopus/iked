@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2012-2015 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,15 +20,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.design.widget.TabLayout;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.app.FragmentPagerAdapter;
-import android.support.v4.view.ViewPager;
-import android.support.v7.app.ActionBar;
-import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
+
+import com.google.android.material.tabs.TabLayout;
 
 import org.strongswan.android.R;
 import org.strongswan.android.data.VpnProfileDataSource;
@@ -38,6 +33,13 @@ import org.strongswan.android.security.TrustedCertificateEntry;
 import org.strongswan.android.ui.CertificateDeleteConfirmationDialog.OnCertificateDeleteListener;
 
 import java.security.KeyStore;
+
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentPagerAdapter;
+import androidx.viewpager.widget.ViewPager;
 
 public class TrustedCertificatesActivity extends AppCompatActivity implements TrustedCertificateListFragment.OnTrustedCertificateSelectedListener, OnCertificateDeleteListener
 {
@@ -167,7 +169,7 @@ public class TrustedCertificatesActivity extends AppCompatActivity implements Tr
 
 		public TrustedCertificatesPagerAdapter(FragmentManager fm, Context context)
 		{
-			super(fm);
+			super(fm, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
 			mTabs = new TrustedCertificatesTab[]{
 				new TrustedCertificatesTab(context.getString(R.string.system_tab), TrustedCertificateSource.SYSTEM),
 				new TrustedCertificatesTab(context.getString(R.string.user_tab), TrustedCertificateSource.USER),

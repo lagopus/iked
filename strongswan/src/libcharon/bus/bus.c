@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2011-2016 Tobias Brunner
  * Copyright (C) 2006 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -575,7 +575,7 @@ METHOD(bus_t, message, void,
 METHOD(bus_t, ike_keys, void,
 	private_bus_t *this, ike_sa_t *ike_sa, diffie_hellman_t *dh,
 	chunk_t dh_other, chunk_t nonce_i, chunk_t nonce_r,
-	ike_sa_t *rekey, shared_key_t *shared)
+	ike_sa_t *rekey, shared_key_t *shared, auth_method_t method)
 {
 	enumerator_t *enumerator;
 	entry_t *entry;
@@ -591,7 +591,8 @@ METHOD(bus_t, ike_keys, void,
 		}
 		entry->calling++;
 		keep = entry->listener->ike_keys(entry->listener, ike_sa, dh, dh_other,
-										 nonce_i, nonce_r, rekey, shared);
+										 nonce_i, nonce_r, rekey, shared,
+										 method);
 		entry->calling--;
 		if (!keep)
 		{
@@ -827,7 +828,8 @@ METHOD(bus_t, ike_updown, void,
 		enumerator = ike_sa->create_child_sa_enumerator(ike_sa);
 		while (enumerator->enumerate(enumerator, (void**)&child_sa))
 		{
-			if (child_sa->get_state(child_sa) != CHILD_REKEYED)
+			if (child_sa->get_state(child_sa) != CHILD_REKEYED &&
+				child_sa->get_state(child_sa) != CHILD_DELETED)
 			{
 				child_updown(this, child_sa, FALSE);
 			}

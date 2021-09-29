@@ -1,0 +1,34 @@
+#
+# Copyright 2018 - 2020 Nippon Telegraph and Telephone Corporation.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Base: /lib/systemd/system/strongswan.service
+
+[Unit]
+Description=strongSwan IPsec IKEv1/IKEv2 daemon using swanctl for Lagopus Router
+After=network-online.target
+
+[Service]
+Type=notify
+Environment=LD_PRELOAD=@IPSEC_DIR@/lib/vrf_socket.so
+Environment=CHARON_SYSTEMD=@CHARON_SYSTEMD_CMD@
+Environment=SWANCTL=@SWANCTL_CMD@
+Environment=MOUNT_NS=@IPSEC_DIR@/etc/ns/%i
+Environment=VRF=%i
+ExecStart=/usr/bin/nsenter --mount=${MOUNT_NS} ${CHARON_SYSTEMD}
+ExecStartPost=/usr/bin/nsenter --mount=${MOUNT_NS} ${SWANCTL} --load-all --noprompt
+ExecReload=/usr/bin/nsenter --mount=${MOUNT_NS} ${SWANCTL} --reload
+ExecReload=/usr/bin/nsenter --mount=${MOUNT_NS} ${SWANCTL} --load-all --noprompt
+Restart=on-abnormal

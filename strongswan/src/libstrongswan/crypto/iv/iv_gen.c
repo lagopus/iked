@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2015 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * Copyright (C) 2015 Martin Willi
  * Copyright (C) 2015 revosec AG
@@ -61,6 +61,7 @@ iv_gen_t* iv_gen_create_for_alg(encryption_algorithm_t alg)
 		case ENCR_DES_ECB:
 		case ENCR_DES_IV32:
 		case ENCR_DES_IV64:
+		case ENCR_AES_ECB:
 			break;
 	}
 	return NULL;

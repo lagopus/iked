@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2017 Tobias Brunner
+ * Copyright (C) 2008-2019 Tobias Brunner
  * Copyright (C) 2016 Andreas Steffen
  * Copyright (C) 2005-2007 Martin Willi
  * Copyright (C) 2005 Jan Hutter
@@ -99,14 +99,11 @@ struct child_cfg_t {
 	 * Returned propsal is newly created and must be destroyed after usage.
 	 *
 	 * @param proposals		list from which proposals are selected
-	 * @param strip_dh		TRUE strip out diffie hellman groups
-	 * @param private		accept algorithms from a private range
-	 * @param prefer_self	whether to prefer configured or supplied proposals
+	 * @param flags			flags to consider during proposal selection
 	 * @return				selected proposal, or NULL if nothing matches
 	 */
 	proposal_t* (*select_proposal)(child_cfg_t*this, linked_list_t *proposals,
-								   bool strip_dh, bool private,
-								   bool prefer_self);
+								   proposal_selection_flag_t flags);
 
 	/**
 	 * Add a traffic selector to the config.
@@ -135,11 +132,13 @@ struct child_cfg_t {
 	 * @param local			TRUE for TS on local side, FALSE for remote
 	 * @param supplied		list with TS to select from, or NULL
 	 * @param hosts			addresses to use for narrowing "dynamic" TS', host_t
+	 * @param log			FALSE to avoid logging details about the selection
 	 * @return				list containing the traffic selectors
 	 */
 	linked_list_t *(*get_traffic_selectors)(child_cfg_t *this, bool local,
 											linked_list_t *supplied,
-											linked_list_t *hosts);
+											linked_list_t *hosts, bool log);
+
 	/**
 	 * Get the updown script to run for the CHILD_SA.
 	 *
@@ -183,6 +182,20 @@ struct child_cfg_t {
 	action_t (*get_dpd_action) (child_cfg_t *this);
 
 	/**
+	 * Get the HW offload mode to use for the CHILD_SA.
+	 *
+	 * @return				hw offload mode
+	 */
+	hw_offload_t (*get_hw_offload) (child_cfg_t *this);
+
+	/**
+	 * Get the copy mode for the DS header field to use for the CHILD_SA.
+	 *
+	 * @return				IP header copy mode
+	 */
+	dscp_copy_t (*get_copy_dscp) (child_cfg_t *this);
+
+	/**
 	 * Action to take if CHILD_SA gets closed.
 	 *
 	 * @return				close action
@@ -211,12 +224,28 @@ struct child_cfg_t {
 	uint32_t (*get_reqid)(child_cfg_t *this);
 
 	/**
-	 * Optional mark for CHILD_SA.
+	 * Optional interface ID to set on policies/SAs.
+	 *
+	 * @param inbound		TRUE for inbound, FALSE for outbound
+	 * @return				interface ID
+	 */
+	uint32_t (*get_if_id)(child_cfg_t *this, bool inbound);
+
+	/**
+	 * Optional mark to set on policies/SAs.
 	 *
 	 * @param inbound		TRUE for inbound, FALSE for outbound
 	 * @return				mark
 	 */
 	mark_t (*get_mark)(child_cfg_t *this, bool inbound);
+
+	/**
+	 * Optional mark the SAs should apply after processing packets.
+	 *
+	 * @param inbound		TRUE for inbound, FALSE for outbound
+	 * @return				mark
+	 */
+	mark_t (*get_set_mark)(child_cfg_t *this, bool inbound);
 
 	/**
 	 * Get the TFC padding value to use for CHILD_SA.
@@ -305,14 +334,17 @@ enum child_cfg_option_t {
 	/** Install outbound FWD IPsec policies to bypass drop policies */
 	OPT_FWD_OUT_POLICIES = (1<<4),
 
-	/** Enable hardware offload, if supported by the IPsec backend */
-	OPT_HW_OFFLOAD = (1<<5),
-
 	/** Force 96-bit truncation for SHA-256 */
-	OPT_SHA256_96 = (1<<6),
+	OPT_SHA256_96 = (1<<5),
 
 	/** Set mark on inbound SAs */
-	OPT_MARK_IN_SA = (1<<7),
+	OPT_MARK_IN_SA = (1<<6),
+
+	/** Disable copying the DF bit to the outer IPv4 header in tunnel mode */
+	OPT_NO_COPY_DF = (1<<7),
+
+	/** Disable copying the ECN header field in tunnel mode */
+	OPT_NO_COPY_ECN = (1<<8),
 };
 
 /**
@@ -323,10 +355,18 @@ struct child_cfg_create_t {
 	child_cfg_option_t options;
 	/** Specific reqid to use for CHILD_SA, 0 for auto assignment */
 	uint32_t reqid;
+	/** Optional inbound interface ID */
+	uint32_t if_id_in;
+	/** Optional outbound interface ID */
+	uint32_t if_id_out;
 	/** Optional inbound mark */
 	mark_t mark_in;
 	/** Optional outbound mark */
 	mark_t mark_out;
+	/** Optional inbound mark the SA should apply to traffic */
+	mark_t set_mark_in;
+	/** Optional outbound mark the SA should apply to traffic */
+	mark_t set_mark_out;
 	/** Mode to propose for CHILD_SA */
 	ipsec_mode_t mode;
 	/** TFC padding size, 0 to disable, -1 to pad to PMTU */
@@ -347,6 +387,10 @@ struct child_cfg_create_t {
 	action_t close_action;
 	/** updown script to execute on up/down event (cloned) */
 	char *updown;
+	/** HW offload mode */
+	hw_offload_t hw_offload;
+	/** How to handle the DS header field in tunnel mode */
+	dscp_copy_t copy_dscp;
 };
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2017 Tobias Brunner
+ * Copyright (C) 2008-2018 Tobias Brunner
  * Copyright (C) 2008 Andreas Steffen
  * HSR Hochschule fuer Technik Rapperswil
  *
@@ -218,6 +218,11 @@ struct private_kernel_pfkey_ipsec_t
 	 * whether to install routes along policies
 	 */
 	bool install_routes;
+
+	/**
+	 * whether to install the route via internal interface
+	 */
+	bool route_via_internal;
 
 	/**
 	 * mutex to lock access to the PF_KEY socket
@@ -687,12 +692,27 @@ struct pfkey_msg_t
 			struct sadb_x_kmprivate *x_kmprivate;	/* SADB_X_EXT_KMPRIVATE */
 			struct sadb_x_policy *x_policy;			/* SADB_X_EXT_POLICY */
 			struct sadb_x_sa2 *x_sa2;				/* SADB_X_EXT_SA2 */
+#if defined(__linux__) || defined (__FreeBSD__)
 			struct sadb_x_nat_t_type *x_natt_type;	/* SADB_X_EXT_NAT_T_TYPE */
 			struct sadb_x_nat_t_port *x_natt_sport;	/* SADB_X_EXT_NAT_T_SPORT */
 			struct sadb_x_nat_t_port *x_natt_dport;	/* SADB_X_EXT_NAT_T_DPORT */
+#ifdef __linux__
 			struct sadb_address *x_natt_oa;			/* SADB_X_EXT_NAT_T_OA */
 			struct sadb_x_sec_ctx *x_sec_ctx;		/* SADB_X_EXT_SEC_CTX */
 			struct sadb_x_kmaddress *x_kmaddress;	/* SADB_X_EXT_KMADDRESS */
+#else
+			struct sadb_address *x_natt_oai;		/* SADB_X_EXT_NAT_T_OAI */
+			struct sadb_address *x_natt_oar;		/* SADB_X_EXT_NAT_T_OAR */
+#ifdef SADB_X_EXT_NAT_T_FRAG
+			struct sadb_x_nat_t_frag *x_natt_frag;	/* SADB_X_EXT_NAT_T_FRAG */
+#ifdef SADB_X_EXT_SA_REPLAY
+			struct sadb_x_sa_replay *x_replay;		/* SADB_X_EXT_SA_REPLAY */
+			struct sadb_address *x_new_addr_src;	/* SADB_X_EXT_NEW_ADDRESS_SRC */
+			struct sadb_address *x_new_addr_dst;	/* SADB_X_EXT_NEW_ADDRESS_DST */
+#endif
+#endif
+#endif /* __linux__ */
+#endif /* __linux__ || __FreeBSD__ */
 		} __attribute__((__packed__));
 	};
 };
@@ -718,12 +738,34 @@ ENUM(sadb_ext_type_names, SADB_EXT_RESERVED, SADB_EXT_MAX,
 	"SADB_X_EXT_KMPRIVATE",
 	"SADB_X_EXT_POLICY",
 	"SADB_X_EXT_SA2",
+#ifdef __APPLE__
+	"SADB_EXT_SESSION_ID",
+	"SADB_EXT_SASTAT",
+	"SADB_X_EXT_IPSECIF",
+	"SADB_X_EXT_ADDR_RANGE_SRC_START",
+	"SADB_X_EXT_ADDR_RANGE_SRC_END",
+	"SADB_X_EXT_ADDR_RANGE_DST_START",
+	"SADB_X_EXT_ADDR_RANGE_DST_END",
+	"SADB_EXT_MIGRATE_ADDRESS_SRC",
+	"SADB_EXT_MIGRATE_ADDRESS_DST",
+	"SADB_X_EXT_MIGRATE_IPSECIF",
+#else
 	"SADB_X_EXT_NAT_T_TYPE",
 	"SADB_X_EXT_NAT_T_SPORT",
 	"SADB_X_EXT_NAT_T_DPORT",
+#ifdef __linux__
 	"SADB_X_EXT_NAT_T_OA",
 	"SADB_X_EXT_SEC_CTX",
-	"SADB_X_EXT_KMADDRESS"
+	"SADB_X_EXT_KMADDRESS",
+#else
+	"SADB_X_EXT_NAT_T_OAI",
+	"SADB_X_EXT_NAT_T_OAR",
+	"SADB_X_EXT_NAT_T_FRAG",
+	"SADB_X_EXT_SA_REPLAY",
+	"SADB_X_EXT_NEW_ADDRESS_SRC",
+	"SADB_X_EXT_NEW_ADDRESS_DST",
+#endif /* __linux__ */
+#endif /* __APPLE__ */
 );
 
 /**
@@ -885,9 +927,14 @@ static kernel_algorithm_t encryption_algs[] = {
 	{ENCR_AES_GCM_ICV8,			SADB_X_EALG_AES_GCM_ICV8	},
 	{ENCR_AES_GCM_ICV12,		SADB_X_EALG_AES_GCM_ICV12	},
 	{ENCR_AES_GCM_ICV16,		SADB_X_EALG_AES_GCM_ICV16	},
+#elif defined(SADB_X_EALG_AES_GCM) /* macOS */
+	{ENCR_AES_GCM_ICV16,		SADB_X_EALG_AES_GCM			},
 #endif
 #ifdef SADB_X_EALG_CAMELLIACBC
 	{ENCR_CAMELLIA_CBC,			SADB_X_EALG_CAMELLIACBC		},
+#endif
+#ifdef SADB_X_EALG_CHACHA20POLY1305
+	{ENCR_CHACHA20_POLY1305,	SADB_X_EALG_CHACHA20POLY1305},
 #endif
 	{END_OF_LIST,				0							},
 };
@@ -1135,6 +1182,23 @@ static status_t pfkey_send_socket(private_kernel_pfkey_ipsec_t *this, int socket
 
 	this->mutex_pfkey->lock(this->mutex_pfkey);
 
+	/* the kernel may broadcast messages not related to our requests (e.g. when
+	 * managing SAs and policies via an external tool), so let's clear the
+	 * receive buffer so there is room for our request and its reply. */
+	while (TRUE)
+	{
+		len = recv(socket, buf, sizeof(buf), MSG_DONTWAIT);
+
+		if (len < 0)
+		{
+			if (errno == EINTR)
+			{	/* interrupted, try again */
+				continue;
+			}
+			break;
+		}
+	}
+
 	/* FIXME: our usage of sequence numbers is probably wrong. check RFC 2367,
 	 * in particular the behavior in response to an SADB_ACQUIRE. */
 	in->sadb_msg_seq = ++this->seq;
@@ -1277,20 +1341,27 @@ static void process_acquire(private_kernel_pfkey_ipsec_t *this,
 		return;
 	}
 
-	index = response.x_policy->sadb_x_policy_id;
-	this->mutex->lock(this->mutex);
-	if (this->policies->find_first(this->policies, policy_entry_match_byindex,
-								  (void**)&policy, index) &&
-		policy->used_by->get_first(policy->used_by, (void**)&sa) == SUCCESS)
+	if (response.x_sa2)
 	{
-		reqid = sa->sa->cfg.reqid;
+		reqid = response.x_sa2->sadb_x_sa2_reqid;
 	}
 	else
 	{
-		DBG1(DBG_KNL, "received an SADB_ACQUIRE with policy id %d but no "
-					  "matching policy found", index);
+		index = response.x_policy->sadb_x_policy_id;
+		this->mutex->lock(this->mutex);
+		if (this->policies->find_first(this->policies, policy_entry_match_byindex,
+									   (void**)&policy, index) &&
+			policy->used_by->get_first(policy->used_by, (void**)&sa) == SUCCESS)
+		{
+			reqid = sa->sa->cfg.reqid;
+		}
+		else
+		{
+			DBG1(DBG_KNL, "received an SADB_ACQUIRE with policy id %d but no "
+				 "matching policy found", index);
+		}
+		this->mutex->unlock(this->mutex);
 	}
-	this->mutex->unlock(this->mutex);
 
 	src_ts = sadb_address2ts(response.src);
 	dst_ts = sadb_address2ts(response.dst);
@@ -1741,6 +1812,17 @@ METHOD(kernel_ipsec_t, add_sa, status_t,
 			sa->sadb_sa_replay = min(data->replay_window, 32);
 #else
 			sa->sadb_sa_replay = min((data->replay_window + 7) / 8, UINT8_MAX);
+#endif
+		}
+		if (data->esn)
+		{
+#ifdef SADB_X_SAFLAGS_ESN
+			DBG2(DBG_KNL, "  using extended sequence numbers (ESN)");
+			sa->sadb_sa_flags |= SADB_X_SAFLAGS_ESN;
+#else
+			DBG1(DBG_KNL, "extended sequence numbers (ESN) not supported by "
+				 "kernel!");
+			return FAILED;
 #endif
 		}
 		sa->sadb_sa_auth = lookup_algorithm(INTEGRITY_ALGORITHM, data->int_alg);
@@ -2361,7 +2443,7 @@ static bool install_route(private_kernel_pfkey_ipsec_t *this,
 		/* if the IP is virtual, we install the route over the interface it has
 		 * been installed on. Otherwise we use the interface we use for IKE, as
 		 * this is required for example on Linux. */
-		if (is_virtual)
+		if (is_virtual || this->route_via_internal)
 		{
 			free(route->if_name);
 			route->if_name = NULL;
@@ -2448,6 +2530,45 @@ static bool install_route(private_kernel_pfkey_ipsec_t *this,
 			route_entry_destroy(route);
 			return FALSE;
 	}
+}
+
+/**
+ * Check if any significant data has changed to warrant sending an update to
+ * the kernel.
+ */
+static bool policy_update_required(policy_sa_t *current, policy_sa_t *updated)
+{
+	if (current->type != updated->type
+#ifdef HAVE_STRUCT_SADB_X_POLICY_SADB_X_POLICY_PRIORITY
+		|| current->priority != updated->priority
+#endif
+		)
+	{
+		return TRUE;
+	}
+	if (current->type == POLICY_IPSEC)
+	{
+		ipsec_sa_cfg_t *cur = &current->sa->cfg, *upd = &updated->sa->cfg;
+
+		/* we don't use ipsec_sa_cfg_equals() here as e.g. SPIs are not
+		 * relevant for this kernel interface, so we don't have to update the
+		 * policy during a rekeying */
+		if (cur->mode != upd->mode ||
+			cur->reqid != upd->reqid ||
+			cur->esp.use != upd->esp.use ||
+			cur->ah.use != upd->ah.use ||
+			cur->ipcomp.transform != upd->ipcomp.transform)
+		{
+			return TRUE;
+		}
+		if (cur->mode == MODE_TUNNEL &&
+			(!current->sa->src->ip_equals(current->sa->src, updated->sa->src) ||
+			 !current->sa->dst->ip_equals(current->sa->dst, updated->sa->dst)))
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 /**
@@ -2624,7 +2745,7 @@ METHOD(kernel_ipsec_t, add_policy, status_t,
 	kernel_ipsec_manage_policy_t *data)
 {
 	policy_entry_t *policy, *found = NULL;
-	policy_sa_t *assigned_sa, *current_sa;
+	policy_sa_t *assigned_sa, *current_sa = NULL;
 	enumerator_t *enumerator;
 	bool update = TRUE;
 
@@ -2686,6 +2807,13 @@ METHOD(kernel_ipsec_t, add_policy, status_t,
 	}
 	policy->used_by->insert_before(policy->used_by, enumerator, assigned_sa);
 	enumerator->destroy(enumerator);
+
+	if (update && current_sa)
+	{	/* check if there are actually any relevant changes, if not, we don't
+		 * send an update to the kernel as e.g. FreeBSD doesn't do that
+		 * atomically, causing unnecessary traffic loss during rekeyings */
+		update = policy_update_required(current_sa, assigned_sa);
+	}
 
 	if (!update)
 	{	/* we don't update the policy if the priority is lower than that of the
@@ -2884,22 +3012,28 @@ METHOD(kernel_ipsec_t, del_policy, status_t,
 		return SUCCESS;
 	}
 	policy->used_by->remove(policy->used_by, to_remove, NULL);
-	mapping = to_remove;
 
 	if (policy->used_by->get_count(policy->used_by) > 0)
 	{	/* policy is used by more SAs, keep in kernel */
 		DBG2(DBG_KNL, "policy still used by another CHILD_SA, not removed");
-		policy_sa_destroy(mapping, id->dir, this);
+
+		if (is_installed)
+		{	/* check if there are actually any relevant changes, if not, we do
+			 * not send an update to the kernel as e.g. FreeBSD doesn't do that
+			 * atomically, causing unnecessary traffic loss during rekeyings */
+			policy->used_by->get_first(policy->used_by, (void**)&mapping);
+			is_installed = policy_update_required(mapping, to_remove);
+		}
+		policy_sa_destroy(to_remove, id->dir, this);
 
 		if (!is_installed)
-		{	/* no need to update as the policy was not installed for this SA */
+		{	/* no need to update as the policy */
 			this->mutex->unlock(this->mutex);
 			return SUCCESS;
 		}
 
 		DBG2(DBG_KNL, "updating policy %R === %R %N", id->src_ts, id->dst_ts,
 			 policy_dir_names, id->dir);
-		policy->used_by->get_first(policy->used_by, (void**)&mapping);
 		if (add_policy_internal(this, policy, mapping, TRUE) != SUCCESS)
 		{
 			DBG1(DBG_KNL, "unable to update policy %R === %R %N",
@@ -2921,7 +3055,7 @@ METHOD(kernel_ipsec_t, del_policy, status_t,
 	pol->sadb_x_policy_exttype = SADB_X_EXT_POLICY;
 	pol->sadb_x_policy_len = PFKEY_LEN(sizeof(struct sadb_x_policy));
 	pol->sadb_x_policy_dir = dir2kernel(id->dir);
-	pol->sadb_x_policy_type = type2kernel(mapping->type);
+	pol->sadb_x_policy_type = type2kernel(to_remove->type);
 	PFKEY_EXT_ADD(msg, pol);
 
 	add_addr_ext(msg, policy->src.net, SADB_EXT_ADDRESS_SRC, policy->src.proto,
@@ -2944,7 +3078,7 @@ METHOD(kernel_ipsec_t, del_policy, status_t,
 	}
 
 	this->policies->remove(this->policies, found, NULL);
-	policy_sa_destroy(mapping, id->dir, this);
+	policy_sa_destroy(to_remove, id->dir, this);
 	policy_entry_destroy(policy, this);
 	this->mutex->unlock(this->mutex);
 
@@ -3164,6 +3298,9 @@ kernel_pfkey_ipsec_t *kernel_pfkey_ipsec_create()
 		.install_routes = lib->settings->get_bool(lib->settings,
 												  "%s.install_routes", TRUE,
 												  lib->ns),
+		.route_via_internal = lib->settings->get_bool(lib->settings,
+								"%s.plugins.kernel-pfkey.route_via_internal",
+								FALSE, lib->ns),
 	);
 
 	if (streq(lib->ns, "starter"))

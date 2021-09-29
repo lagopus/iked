@@ -544,6 +544,60 @@ INSERT INTO products (      /* 91 */
  'Debian 8.9 x86_64'
 );
 
+INSERT INTO products (      /* 92 */
+  name
+) VALUES (
+ 'Debian 8.10 i686'
+);
+
+INSERT INTO products (      /* 93 */
+  name
+) VALUES (
+ 'Debian 8.10 x86_64'
+);
+
+INSERT INTO products (      /* 94 */
+  name
+) VALUES (
+ 'Debian 8.11 i686'
+);
+
+INSERT INTO products (      /* 95 */
+  name
+) VALUES (
+ 'Debian 8.11 x86_64'
+);
+
+INSERT INTO products (      /* 96 */
+  name
+) VALUES (
+ 'Ubuntu 18.04 x86_64'
+);
+
+INSERT INTO products (      /* 97 */
+  name
+) VALUES (
+ 'Debian 9.5 i686'
+);
+
+INSERT INTO products (      /* 98 */
+  name
+) VALUES (
+ 'Debian 9.5 x86_64'
+);
+
+INSERT INTO products (      /* 99 */
+  name
+) VALUES (
+ 'Debian 9.6 x86_64'
+);
+
+INSERT INTO products (      /* 100 */
+  name
+) VALUES (
+ 'Debian 9.7 x86_64'
+);
+
 /* Directories */
 
 INSERT INTO directories (		/*  1 */
@@ -641,7 +695,7 @@ INSERT INTO files (				/*  1 */
 INSERT INTO files (				/*  2 */
   name, dir
 ) VALUES (
- 'libcrypto.so.1.0.0', 11
+ 'libcrypto.so.1.1', 11
 );
 
 INSERT INTO files (				/*  3 */
@@ -653,7 +707,7 @@ INSERT INTO files (				/*  3 */
 INSERT INTO files (				/*  4 */
   name, dir
 ) VALUES (
- 'libssl.so.1.0.0', 11
+ 'libssl.so.1.1', 11
 );
 
 INSERT INTO files (				/*  5 */
@@ -956,19 +1010,19 @@ INSERT INTO groups (			/* 10 */
   'Ref. Linux', 8
 );
 
-INSERT INTO groups (            /* 11 */
+INSERT INTO groups (      /* 11 */
   name
 ) VALUES (
   'TPM BIOS'
 );
 
-INSERT INTO groups (            /* 12 */
+INSERT INTO groups (      /* 12 */
   name
 ) VALUES (
   'TPM IMA'
 );
 
-INSERT INTO groups (            /* 13 */
+INSERT INTO groups (      /* 13 */
   name
 ) VALUES (
   'TPM BIOS/IMA'
@@ -986,7 +1040,7 @@ INSERT INTO groups (			/* 15 */
   'Debian armv7l', 2
 );
 
-INSERT INTO groups (            /* 16 */
+INSERT INTO groups (      /* 16 */
   name
 ) VALUES (
   'TPM TBOOT'
@@ -1105,6 +1159,24 @@ INSERT INTO groups_product_defaults (
 INSERT INTO groups_product_defaults (
   group_id, product_id
 ) VALUES (
+  4, 92
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  4, 94
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  4, 97
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
   5, 2
 );
 
@@ -1208,6 +1280,36 @@ INSERT INTO groups_product_defaults (
   group_id, product_id
 ) VALUES (
   5, 91
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  5, 93
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  5, 95
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  5, 98
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  5, 99
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  5, 100
 );
 
 INSERT INTO groups_product_defaults (
@@ -1358,6 +1460,12 @@ INSERT INTO groups_product_defaults (
   group_id, product_id
 ) VALUES (
   7, 75
+);
+
+INSERT INTO groups_product_defaults (
+  group_id, product_id
+) VALUES (
+  7, 96
 );
 
 INSERT INTO groups_product_defaults (
@@ -1605,13 +1713,13 @@ INSERT INTO policies (			/* 11 */
 INSERT INTO policies (			/*  12 */
   type, name, file, rec_fail, rec_noresult
 ) VALUES (
-  6, 'Measure /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0', 2, 2, 2
+  6, 'Measure /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1', 2, 2, 2
 );
 
 INSERT INTO policies (			/* 13 */
   type, name, file, rec_fail, rec_noresult
 ) VALUES (
-  6, 'Measure /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0', 4, 2, 2
+  6, 'Measure /usr/lib/x86_64-linux-gnu/libssl.so.1.1', 4, 2, 2
 );
 
 INSERT INTO policies (			/* 14 */

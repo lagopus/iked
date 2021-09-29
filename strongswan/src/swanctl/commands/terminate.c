@@ -39,6 +39,7 @@ static int terminate(vici_conn_t *conn)
 	command_format_options_t format = COMMAND_FORMAT_NONE;
 	char *arg, *child = NULL, *ike = NULL;
 	int ret = 0, timeout = 0, level = 1, child_id = 0, ike_id = 0;
+	bool force = FALSE;
 
 	while (TRUE)
 	{
@@ -54,6 +55,9 @@ static int terminate(vici_conn_t *conn)
 				continue;
 			case 'c':
 				child = arg;
+				continue;
+			case 'f':
+				force = TRUE;
 				continue;
 			case 'i':
 				ike = arg;
@@ -101,6 +105,10 @@ static int terminate(vici_conn_t *conn)
 	{
 		vici_add_key_valuef(req, "ike-id", "%d", ike_id);
 	}
+	if (force)
+	{
+		vici_add_key_valuef(req, "force", "yes");
+	}
 	if (timeout)
 	{
 		vici_add_key_valuef(req, "timeout", "%d", timeout * 1000);
@@ -142,7 +150,7 @@ static void __attribute__ ((constructor))reg()
 {
 	command_register((command_t) {
 		terminate, 't', "terminate", "terminate a connection",
-		{"--child <name> | --ike <name | --child-id <id> | --ike-id <id>",
+		{"--child <name> | --ike <name> | --child-id <id> | --ike-id <id>",
 		 "[--timeout <s>] [--raw|--pretty]"},
 		{
 			{"help",		'h', 0, "show usage information"},
@@ -150,6 +158,7 @@ static void __attribute__ ((constructor))reg()
 			{"ike",			'i', 1, "terminate by IKE_SA name"},
 			{"child-id",	'C', 1, "terminate by CHILD_SA reqid"},
 			{"ike-id",		'I', 1, "terminate by IKE_SA unique identifier"},
+			{"force",		'f', 0, "terminate IKE_SA without waiting, unless timeout is set"},
 			{"timeout",		't', 1, "timeout in seconds before detaching"},
 			{"raw",			'r', 0, "dump raw response message"},
 			{"pretty",		'P', 0, "dump raw response message in pretty print"},

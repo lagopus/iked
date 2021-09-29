@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2006-2012 Tobias Brunner
+ * Copyright (C) 2006-2018 Tobias Brunner
  * Copyright (C) 2005-2014 Martin Willi
  * Copyright (C) 2006 Daniel Roethlisberger
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  * Copyright (C) 2014 revosec AG
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -79,9 +79,9 @@ typedef struct journal_logger_t journal_logger_t;
 struct journal_logger_t {
 
 	/**
-	 * Implements logger_t
+	 * Public interface
 	 */
-	logger_t logger;
+	custom_logger_t public;
 
 	/**
 	 * Configured loglevels
@@ -171,66 +171,37 @@ METHOD(logger_t, get_level, level_t,
 	return level;
 }
 
-/**
- * Reload journal logger configuration
- */
-CALLBACK(journal_reload, bool,
-	journal_logger_t **journal)
+METHOD(custom_logger_t, set_level, void,
+	journal_logger_t *this, debug_t group, level_t level)
 {
-	journal_logger_t *this = *journal;
-	debug_t group;
-	level_t def;
-
-	def = lib->settings->get_int(lib->settings, "%s.journal.default", 1, lib->ns);
-
 	this->lock->write_lock(this->lock);
-	for (group = 0; group < DBG_MAX; group++)
-	{
-		this->levels[group] =
-			lib->settings->get_int(lib->settings,
-				"%s.journal.%N", def, lib->ns, debug_lower_names, group);
-	}
+	this->levels[group] = level;
 	this->lock->unlock(this->lock);
-
-	charon->bus->add_logger(charon->bus, &this->logger);
-
-	return TRUE;
 }
 
-/**
- * Initialize/deinitialize journal logger
- */
-static bool journal_register(void *plugin, plugin_feature_t *feature,
-							 bool reg, journal_logger_t **logger)
+METHOD(custom_logger_t, logger_destroy, void,
+	journal_logger_t *this)
+{
+	this->lock->destroy(this->lock);
+	free(this);
+}
+
+static custom_logger_t *journal_logger_create(const char *name)
 {
 	journal_logger_t *this;
 
-	if (reg)
-	{
-		INIT(this,
+	INIT(this,
+		.public = {
 			.logger = {
 				.vlog = _vlog,
 				.get_level = _get_level,
 			},
-			.lock = rwlock_create(RWLOCK_TYPE_DEFAULT),
-		);
-
-		journal_reload(&this);
-
-		*logger = this;
-		return TRUE;
-	}
-	else
-	{
-		this = *logger;
-
-		charon->bus->remove_logger(charon->bus, &this->logger);
-
-		this->lock->destroy(this->lock);
-		free(this);
-
-		return TRUE;
-	}
+			.set_level = _set_level,
+			.destroy = _logger_destroy,
+		},
+		.lock = rwlock_create(RWLOCK_TYPE_DEFAULT),
+	);
+	return &this->public;
 }
 
 /**
@@ -310,6 +281,7 @@ static bool lookup_uid_gid()
 	return TRUE;
 }
 
+#ifndef DISABLE_SIGNAL_HANDLER
 /**
  * Handle SIGSEGV/SIGILL signals raised by threads
  */
@@ -326,19 +298,7 @@ static void segv_handler(int signal)
 	DBG1(DBG_DMN, "killing ourself, received critical signal");
 	abort();
 }
-
-/**
- * The journal logger instance
- */
-static journal_logger_t *journal;
-
-/**
- * Journal static features
- */
-static plugin_feature_t features[] = {
-	PLUGIN_CALLBACK((plugin_feature_callback_t)journal_register, &journal),
-		PLUGIN_PROVIDE(CUSTOM, "systemd-journal"),
-};
+#endif /* DISABLE_SIGNAL_HANDLER */
 
 /**
  * Add namespace alias
@@ -350,12 +310,21 @@ static void __attribute__ ((constructor))register_namespace()
 }
 
 /**
+ * Register journal logger
+ */
+static void __attribute__ ((constructor))register_logger()
+{
+	register_custom_logger("journal", journal_logger_create);
+}
+
+/**
  * Main function, starts the daemon.
  */
 int main(int argc, char *argv[])
 {
 	struct sigaction action;
 	struct utsname utsname;
+	int status = SS_RC_INITIALIZATION_FAILED;
 
 	dbg = dbg_stderr;
 
@@ -379,47 +348,56 @@ int main(int argc, char *argv[])
 		sd_notifyf(0, "STATUS=integrity check of charon-systemd failed");
 		return SS_RC_INITIALIZATION_FAILED;
 	}
-	atexit(libcharon_deinit);
 	if (!libcharon_init())
 	{
 		sd_notifyf(0, "STATUS=libcharon initialization failed");
-		return SS_RC_INITIALIZATION_FAILED;
+		goto error;
 	}
 	if (!lookup_uid_gid())
 	{
 		sd_notifyf(0, "STATUS=unknown uid/gid");
-		return SS_RC_INITIALIZATION_FAILED;
+		goto error;
 	}
-	charon->load_loggers(charon);
+	/* we registered the journal logger as custom logger, which gets its
+	 * settings from <ns>.customlog.journal, let it fallback to <ns>.journal */
+	lib->settings->add_fallback(lib->settings, "%s.customlog.journal",
+								"%s.journal", lib->ns);
+	/* load the journal logger by default */
+	lib->settings->set_default_str(lib->settings, "%s.journal.default", "1",
+								   lib->ns);
 
-	lib->plugins->add_static_features(lib->plugins, lib->ns, features,
-							countof(features), TRUE, journal_reload, &journal);
+	charon->load_loggers(charon);
 
 	if (!charon->initialize(charon,
 			lib->settings->get_str(lib->settings, "%s.load", PLUGINS, lib->ns)))
 	{
 		sd_notifyf(0, "STATUS=charon initialization failed");
-		return SS_RC_INITIALIZATION_FAILED;
+		goto error;
 	}
 	lib->plugins->status(lib->plugins, LEVEL_CTRL);
 
 	if (!lib->caps->drop(lib->caps))
 	{
 		sd_notifyf(0, "STATUS=dropping capabilities failed");
-		return SS_RC_INITIALIZATION_FAILED;
+		goto error;
 	}
 
-	/* add handler for SEGV and ILL,
+	/* add handler for fatal signals,
 	 * INT, TERM and HUP are handled by sigwaitinfo() in run() */
-	action.sa_handler = segv_handler;
 	action.sa_flags = 0;
 	sigemptyset(&action.sa_mask);
 	sigaddset(&action.sa_mask, SIGINT);
 	sigaddset(&action.sa_mask, SIGTERM);
 	sigaddset(&action.sa_mask, SIGHUP);
+
+	/* optionally let the external system handle fatal signals */
+#ifndef DISABLE_SIGNAL_HANDLER
+	action.sa_handler = segv_handler;
 	sigaction(SIGSEGV, &action, NULL);
 	sigaction(SIGILL, &action, NULL);
 	sigaction(SIGBUS, &action, NULL);
+#endif /* DISABLE_SIGNAL_HANDLER */
+
 	action.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &action, NULL);
 
@@ -430,5 +408,9 @@ int main(int argc, char *argv[])
 	sd_notifyf(0, "STATUS=charon-systemd running, strongSwan %s, %s %s, %s",
 			   VERSION, utsname.sysname, utsname.release, utsname.machine);
 
-	return run();
+	status = run();
+
+error:
+	libcharon_deinit();
+	return status;
 }

@@ -3,7 +3,7 @@
  * Copyright (C) 2005-2013 Martin Willi
  * Copyright (C) 2006 Daniel Roethlisberger
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -174,6 +174,7 @@ static bool lookup_uid_gid()
 	return TRUE;
 }
 
+#ifndef DISABLE_SIGNAL_HANDLER
 /**
  * Handle SIGSEGV/SIGILL signals raised by threads
  */
@@ -189,6 +190,7 @@ static void segv_handler(int signal)
 	DBG1(DBG_DMN, "killing ourself, received critical signal");
 	abort();
 }
+#endif /* DISABLE_SIGNAL_HANDLER */
 
 /**
  * Print command line usage and exit
@@ -348,6 +350,9 @@ int main(int argc, char *argv[])
 	{
 		exit(SS_RC_INITIALIZATION_FAILED);
 	}
+	/* register this again after loading plugins to avoid issues with libraries
+	 * that register atexit() handlers */
+	atexit(libcharon_deinit);
 	if (!lib->caps->drop(lib->caps))
 	{
 		exit(SS_RC_INITIALIZATION_FAILED);
@@ -358,9 +363,6 @@ int main(int argc, char *argv[])
 	creds = cmd_creds_create();
 	atexit(cleanup_creds);
 
-	/* handle all arguments */
-	handle_arguments(argc, argv, FALSE);
-
 	if (uname(&utsname) != 0)
 	{
 		memset(&utsname, 0, sizeof(utsname));
@@ -369,18 +371,26 @@ int main(int argc, char *argv[])
 		 VERSION, utsname.sysname, utsname.release, utsname.machine);
 	lib->plugins->status(lib->plugins, LEVEL_CTRL);
 
-	/* add handler for SEGV and ILL,
-	 * INT, TERM and HUP are handled by sigwaitinfo() in run() */
-	action.sa_handler = segv_handler;
+	/* handle all arguments */
+	handle_arguments(argc, argv, FALSE);
+
+	/* add handler for fatal signals,
+	 * INT, TERM, HUP and USR1 are handled by sigwaitinfo() in run() */
 	action.sa_flags = 0;
 	sigemptyset(&action.sa_mask);
 	sigaddset(&action.sa_mask, SIGINT);
 	sigaddset(&action.sa_mask, SIGTERM);
 	sigaddset(&action.sa_mask, SIGHUP);
 	sigaddset(&action.sa_mask, SIGUSR1);
+
+	/* optionally let the external system handle fatal signals */
+#ifndef DISABLE_SIGNAL_HANDLER
+	action.sa_handler = segv_handler;
 	sigaction(SIGSEGV, &action, NULL);
 	sigaction(SIGILL, &action, NULL);
 	sigaction(SIGBUS, &action, NULL);
+#endif /* DISABLE_SIGNAL_HANDLER */
+
 	action.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &action, NULL);
 

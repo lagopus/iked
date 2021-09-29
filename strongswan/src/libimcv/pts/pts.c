@@ -323,7 +323,6 @@ METHOD(pts_t, set_tpm_version_info, void,
 	private_pts_t *this, chunk_t info)
 {
 	this->tpm_version_info = chunk_clone(info);
-	/* print_tpm_version_info(this); */
 }
 
 /**
@@ -734,7 +733,7 @@ METHOD(pts_t, verify_quote_signature, bool,
 					scheme = SIGN_RSA_EMSA_PKCS1_SHA3_384;
 					break;
 				case HASH_SHA3_512:
-					scheme = SIGN_RSA_EMSA_PKCS1_SHA2_512;
+					scheme = SIGN_RSA_EMSA_PKCS1_SHA3_512;
 					break;
 				default:
 					scheme = SIGN_UNKNOWN;

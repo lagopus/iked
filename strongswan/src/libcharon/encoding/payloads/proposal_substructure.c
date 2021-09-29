@@ -2,7 +2,7 @@
  * Copyright (C) 2012-2014 Tobias Brunner
  * Copyright (C) 2005-2010 Martin Willi
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1539,7 +1539,7 @@ proposal_substructure_t *proposal_substructure_create_from_proposal_v2(
 	private_proposal_substructure_t *this;
 
 	this = (private_proposal_substructure_t*)
-							proposal_substructure_create(PLV2_SECURITY_ASSOCIATION);
+						proposal_substructure_create(PLV2_PROPOSAL_SUBSTRUCTURE);
 	set_from_proposal_v2(this, proposal);
 	set_data(this, proposal);
 

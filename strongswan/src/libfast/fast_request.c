@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2007 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 #include <ClearSilver/ClearSilver.h>
 
@@ -75,7 +76,7 @@ struct private_fast_request_t {
 };
 
 /**
- * ClearSilver cgiwrap is not threadsave, so we use a private
+ * ClearSilver cgiwrap is not threadsafe, so we use a private
  * context for each thread.
  */
 static thread_value_t *thread_this;
@@ -303,7 +304,7 @@ METHOD(fast_request_t, sendfile, bool,
 		return FALSE;
 	}
 	/* FCGX does not like large integers, print to a buffer using libc */
-	snprintf(buf, sizeof(buf), "%lld", (int64_t)data->len);
+	snprintf(buf, sizeof(buf), "%"PRId64, (int64_t)data->len);
 	FCGX_FPrintF(this->req.out, "Content-Length: %s\n", buf);
 	if (mime)
 	{

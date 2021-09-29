@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,7 +37,7 @@ struct sql_config_t {
 	backend_t backend;
 
 	/**
-	 * Destry the backend.
+	 * Destroy the backend.
 	 */
 	void (*destroy)(sql_config_t *this);
 };

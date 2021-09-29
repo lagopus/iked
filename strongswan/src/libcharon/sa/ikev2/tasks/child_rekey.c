@@ -145,8 +145,7 @@ static void find_child(private_child_rekey_t *this, message_t *message)
 			child_sa = this->ike_sa->get_child_sa(this->ike_sa, protocol,
 												  spi, FALSE);
 			if (child_sa &&
-				child_sa->get_state(child_sa) == CHILD_DELETING &&
-				child_sa->get_outbound_state(child_sa) == CHILD_OUTBOUND_NONE)
+				child_sa->get_state(child_sa) == CHILD_DELETED)
 			{	/* ignore rekeyed CHILD_SAs we keep around */
 				return;
 			}
@@ -208,12 +207,16 @@ METHOD(task_t, build_i, status_t,
 	this->child_create->use_marks(this->child_create,
 						this->child_sa->get_mark(this->child_sa, TRUE).value,
 						this->child_sa->get_mark(this->child_sa, FALSE).value);
+	this->child_create->use_if_ids(this->child_create,
+						this->child_sa->get_if_id(this->child_sa, TRUE),
+						this->child_sa->get_if_id(this->child_sa, FALSE));
 
 	if (this->child_create->task.build(&this->child_create->task,
 									   message) != NEED_MORE)
 	{
 		schedule_delayed_rekey(this);
-		return FAILED;
+		message->set_exchange_type(message, EXCHANGE_TYPE_UNDEFINED);
+		return SUCCESS;
 	}
 	if (message->get_exchange_type(message) == CREATE_CHILD_SA)
 	{
@@ -266,6 +269,9 @@ METHOD(task_t, build_r, status_t,
 	this->child_create->use_marks(this->child_create,
 						this->child_sa->get_mark(this->child_sa, TRUE).value,
 						this->child_sa->get_mark(this->child_sa, FALSE).value);
+	this->child_create->use_if_ids(this->child_create,
+						this->child_sa->get_if_id(this->child_sa, TRUE),
+						this->child_sa->get_if_id(this->child_sa, FALSE));
 	config = this->child_sa->get_config(this->child_sa);
 	this->child_create->set_config(this->child_create, config->get_ref(config));
 	this->child_create->task.build(&this->child_create->task, message);

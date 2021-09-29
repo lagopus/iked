@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2012 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * Copyright (C) 2012-2018 Tobias Brunner
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,11 +17,15 @@ package org.strongswan.android.ui;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
 
 import org.strongswan.android.R;
 import org.strongswan.android.data.VpnProfile;
 import org.strongswan.android.ui.VpnProfileListFragment.OnVpnProfileSelectedListener;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.pm.ShortcutInfoCompat;
+import androidx.core.content.pm.ShortcutManagerCompat;
+import androidx.core.graphics.drawable.IconCompat;
 
 public class VpnProfileSelectActivity extends AppCompatActivity implements OnVpnProfileSelectedListener
 {
@@ -39,14 +43,14 @@ public class VpnProfileSelectActivity extends AppCompatActivity implements OnVpn
 	@Override
 	public void onVpnProfileSelected(VpnProfile profile)
 	{
-		Intent shortcut = new Intent(MainActivity.START_PROFILE);
-		shortcut.putExtra(MainActivity.EXTRA_VPN_PROFILE_ID, profile.getId());
+		Intent shortcut = new Intent(VpnProfileControlActivity.START_PROFILE);
+		shortcut.putExtra(VpnProfileControlActivity.EXTRA_VPN_PROFILE_ID, profile.getUUID().toString());
 
-		Intent intent = new Intent();
-		intent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcut);
-		intent.putExtra(Intent.EXTRA_SHORTCUT_NAME, profile.getName());
-		intent.putExtra(Intent.EXTRA_SHORTCUT_ICON_RESOURCE, Intent.ShortcutIconResource.fromContext(this, R.drawable.ic_launcher));
-		setResult(RESULT_OK, intent);
+		ShortcutInfoCompat.Builder builder = new ShortcutInfoCompat.Builder(this, profile.getUUID().toString());
+		builder.setIntent(shortcut);
+		builder.setShortLabel(profile.getName());
+		builder.setIcon(IconCompat.createWithResource(this, R.mipmap.ic_shortcut));
+		setResult(RESULT_OK, ShortcutManagerCompat.createShortcutResultIntent(this, builder.build()));
 		finish();
 	}
 }

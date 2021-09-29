@@ -77,6 +77,8 @@ static inline void X509_get0_signature(ASN1_BIT_STRING **psig, X509_ALGOR **palg
 #define X509v3_addr_get_afi v3_addr_get_afi
 #define X509v3_addr_get_range v3_addr_get_range
 #define X509v3_addr_is_canonical v3_addr_is_canonical
+#define X509_get0_notBefore X509_get_notBefore
+#define X509_get0_notAfter X509_get_notAfter
 #endif
 
 typedef struct private_openssl_x509_t private_openssl_x509_t;
@@ -389,7 +391,11 @@ METHOD(certificate_t, issued_by, bool,
 	public_key_t *key;
 	bool valid;
 	x509_t *x509 = (x509_t*)issuer;
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	const ASN1_BIT_STRING *sig;
+#else
 	ASN1_BIT_STRING *sig;
+#endif
 	chunk_t tbs;
 
 	if (&this->public.x509.interface == issuer)
@@ -668,6 +674,9 @@ static bool parse_keyUsage_ext(private_openssl_x509_t *this,
 {
 	ASN1_BIT_STRING *usage;
 
+	/* to be compliant with RFC 4945 specific KUs have to be included */
+	this->flags &= ~X509_IKE_COMPLIANT;
+
 	usage = X509V3_EXT_d2i(ext);
 	if (usage)
 	{
@@ -681,6 +690,11 @@ static bool parse_keyUsage_ext(private_openssl_x509_t *this,
 			if (flags & X509v3_KU_CRL_SIGN)
 			{
 				this->flags |= X509_CRL_SIGN;
+			}
+			if (flags & X509v3_KU_DIGITAL_SIGNATURE ||
+				flags & X509v3_KU_NON_REPUDIATION)
+			{
+				this->flags |= X509_IKE_COMPLIANT;
 			}
 			if (flags & X509v3_KU_KEY_CERT_SIGN)
 			{
@@ -985,8 +999,11 @@ static bool parse_subjectKeyIdentifier_ext(private_openssl_x509_t *this,
  */
 static bool parse_extensions(private_openssl_x509_t *this)
 {
-	STACK_OF(X509_EXTENSION) *extensions;
+	const STACK_OF(X509_EXTENSION) *extensions;
 	int i, num;
+
+	/* unless we see a keyUsage extension we are compliant with RFC 4945 */
+	this->flags |= X509_IKE_COMPLIANT;
 
 	extensions = X509_get0_extensions(this->x509);
 	if (extensions)
@@ -1066,7 +1083,11 @@ static bool parse_certificate(private_openssl_x509_t *this)
 	hasher_t *hasher;
 	chunk_t chunk, sig_scheme, sig_scheme_tbs;
 	ASN1_OBJECT *oid;
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+	const X509_ALGOR *alg;
+#else
 	X509_ALGOR *alg;
+#endif
 
 	this->x509 = d2i_X509(NULL, &ptr, this->encoding.len);
 	if (!this->x509)
@@ -1118,15 +1139,15 @@ static bool parse_certificate(private_openssl_x509_t *this)
 		return FALSE;
 	}
 
-	this->notBefore = openssl_asn1_to_time(X509_get_notBefore(this->x509));
-	this->notAfter = openssl_asn1_to_time(X509_get_notAfter(this->x509));
+	this->notBefore = openssl_asn1_to_time(X509_get0_notBefore(this->x509));
+	this->notAfter = openssl_asn1_to_time(X509_get0_notAfter(this->x509));
 
 	/* while X509_ALGOR_cmp() is declared in the headers of older OpenSSL
 	 * versions, at least on Ubuntu 14.04 it is not actually defined */
 	X509_get0_signature(NULL, &alg, this->x509);
-	sig_scheme = openssl_i2chunk(X509_ALGOR, alg);
+	sig_scheme = openssl_i2chunk(X509_ALGOR, (X509_ALGOR*)alg);
 	alg = X509_get0_tbs_sigalg(this->x509);
-	sig_scheme_tbs = openssl_i2chunk(X509_ALGOR, alg);
+	sig_scheme_tbs = openssl_i2chunk(X509_ALGOR, (X509_ALGOR*)alg);
 	if (!chunk_equals(sig_scheme, sig_scheme_tbs))
 	{
 		free(sig_scheme_tbs.ptr);

@@ -138,7 +138,7 @@ static child_cfg_t* get_child_from_peer(peer_cfg_t *peer_cfg, char *name)
 }
 
 /**
- * Find a peer/child config from a child config name
+ * Find a peer/child config from a config name
  */
 static child_cfg_t* find_child_cfg(char *name, char *pname, peer_cfg_t **out)
 {
@@ -153,6 +153,11 @@ static child_cfg_t* find_child_cfg(char *name, char *pname, peer_cfg_t **out)
 		if (pname && !streq(pname, peer_cfg->get_name(peer_cfg)))
 		{
 			continue;
+		}
+		if (!name)
+		{
+			*out = peer_cfg->get_ref(peer_cfg);
+			break;
 		}
 		child_cfg = get_child_from_peer(peer_cfg, name);
 		if (child_cfg)
@@ -169,9 +174,9 @@ static child_cfg_t* find_child_cfg(char *name, char *pname, peer_cfg_t **out)
 CALLBACK(initiate, vici_message_t*,
 	private_vici_control_t *this, char *name, u_int id, vici_message_t *request)
 {
-	child_cfg_t *child_cfg = NULL;
-	peer_cfg_t *peer_cfg;
-	char *child, *ike;
+	peer_cfg_t *peer_cfg = NULL;
+	child_cfg_t *child_cfg;
+	char *child, *ike, *type, *sa;
 	int timeout;
 	bool limits;
 	controller_cb_t log_cb = NULL;
@@ -186,7 +191,7 @@ CALLBACK(initiate, vici_message_t*,
 	limits = request->get_bool(request, FALSE, "init-limits");
 	log.level = request->get_int(request, 1, "loglevel");
 
-	if (!child)
+	if (!child && !ike)
 	{
 		return send_reply(this, "missing configuration name");
 	}
@@ -195,12 +200,15 @@ CALLBACK(initiate, vici_message_t*,
 		log_cb = (controller_cb_t)log_vici;
 	}
 
-	DBG1(DBG_CFG, "vici initiate '%s'", child);
+	type = child ? "CHILD_SA" : "IKE_SA";
+	sa = child ?: ike;
 
 	child_cfg = find_child_cfg(child, ike, &peer_cfg);
-	if (!child_cfg)
+
+	DBG1(DBG_CFG, "vici initiate %s '%s'", type, sa);
+	if (!peer_cfg)
 	{
-		return send_reply(this, "CHILD_SA config '%s' not found", child);
+		return send_reply(this, "%s config '%s' not found", type, sa);
 	}
 	switch (charon->controller->initiate(charon->controller, peer_cfg,
 									child_cfg, log_cb, &log, timeout, limits))
@@ -208,14 +216,14 @@ CALLBACK(initiate, vici_message_t*,
 		case SUCCESS:
 			return send_reply(this, NULL);
 		case OUT_OF_RES:
-			return send_reply(this, "CHILD_SA '%s' not established after %dms",
-							  child, timeout);
+			return send_reply(this, "%s '%s' not established after %dms", type,
+							  sa, timeout);
 		case INVALID_STATE:
-			return send_reply(this, "establishing CHILD_SA '%s' not possible "
-							  "at the moment due to limits", child);
+			return send_reply(this, "establishing %s '%s' not possible at the "
+							  "moment due to limits", type, sa);
 		case FAILED:
 		default:
-			return send_reply(this, "establishing CHILD_SA '%s' failed", child);
+			return send_reply(this, "establishing %s '%s' failed", type, sa);
 	}
 }
 
@@ -225,6 +233,7 @@ CALLBACK(terminate, vici_message_t*,
 	enumerator_t *enumerator, *isas, *csas;
 	char *child, *ike, *errmsg = NULL;
 	u_int child_id, ike_id, current, *del, done = 0;
+	bool force;
 	int timeout;
 	ike_sa_t *ike_sa;
 	child_sa_t *child_sa;
@@ -240,6 +249,7 @@ CALLBACK(terminate, vici_message_t*,
 	ike = request->get_str(request, NULL, "ike");
 	child_id = request->get_int(request, 0, "child-id");
 	ike_id = request->get_int(request, 0, "ike-id");
+	force = request->get_bool(request, FALSE, "force");
 	timeout = request->get_int(request, 0, "timeout");
 	log.level = request->get_int(request, 1, "loglevel");
 
@@ -326,7 +336,7 @@ CALLBACK(terminate, vici_message_t*,
 		}
 		else
 		{
-			if (charon->controller->terminate_ike(charon->controller, *del,
+			if (charon->controller->terminate_ike(charon->controller, *del, force,
 											log_cb, &log, timeout) == SUCCESS)
 			{
 				done++;
@@ -371,11 +381,13 @@ CALLBACK(rekey, vici_message_t*,
 	ike_sa_t *ike_sa;
 	child_sa_t *child_sa;
 	vici_builder_t *builder;
+	bool reauth;
 
 	child = request->get_str(request, NULL, "child");
 	ike = request->get_str(request, NULL, "ike");
 	child_id = request->get_int(request, 0, "child-id");
 	ike_id = request->get_int(request, 0, "ike-id");
+	reauth = request->get_bool(request, FALSE, "reauth");
 
 	if (!child && !ike && !ike_id && !child_id)
 	{
@@ -436,7 +448,7 @@ CALLBACK(rekey, vici_message_t*,
 				 (ike_id && ike_id == ike_sa->get_unique_id(ike_sa)))
 		{
 			lib->processor->queue_job(lib->processor,
-				(job_t*)rekey_ike_sa_job_create(ike_sa->get_id(ike_sa), FALSE));
+				(job_t*)rekey_ike_sa_job_create(ike_sa->get_id(ike_sa), reauth));
 			found++;
 		}
 	}
@@ -601,41 +613,6 @@ CALLBACK(redirect, vici_message_t*,
 	return builder->finalize(builder);
 }
 
-/**
- * Find reqid of an existing CHILD_SA
- */
-static uint32_t find_reqid(child_cfg_t *cfg)
-{
-	enumerator_t *enumerator, *children;
-	child_sa_t *child_sa;
-	ike_sa_t *ike_sa;
-	uint32_t reqid;
-
-	reqid = charon->traps->find_reqid(charon->traps, cfg);
-	if (reqid)
-	{	/* already trapped */
-		return reqid;
-	}
-
-	enumerator = charon->controller->create_ike_sa_enumerator(
-													charon->controller, TRUE);
-	while (!reqid && enumerator->enumerate(enumerator, &ike_sa))
-	{
-		children = ike_sa->create_child_sa_enumerator(ike_sa);
-		while (children->enumerate(children, &child_sa))
-		{
-			if (streq(cfg->get_name(cfg), child_sa->get_name(child_sa)))
-			{
-				reqid = child_sa->get_reqid(child_sa);
-				break;
-			}
-		}
-		children->destroy(children);
-	}
-	enumerator->destroy(enumerator);
-	return reqid;
-}
-
 CALLBACK(install, vici_message_t*,
 	private_vici_control_t *this, char *name, u_int id, vici_message_t *request)
 {
@@ -666,8 +643,7 @@ CALLBACK(install, vici_message_t*,
 									peer_cfg->get_name(peer_cfg), child_cfg);
 			break;
 		default:
-			ok = charon->traps->install(charon->traps, peer_cfg, child_cfg,
-										find_reqid(child_cfg));
+			ok = charon->traps->install(charon->traps, peer_cfg, child_cfg);
 			break;
 	}
 	peer_cfg->destroy(peer_cfg);
@@ -679,12 +655,7 @@ CALLBACK(install, vici_message_t*,
 CALLBACK(uninstall, vici_message_t*,
 	private_vici_control_t *this, char *name, u_int id, vici_message_t *request)
 {
-	peer_cfg_t *peer_cfg;
-	child_cfg_t *child_cfg;
-	child_sa_t *child_sa;
-	enumerator_t *enumerator;
-	uint32_t reqid = 0;
-	char *child, *ike, *ns;
+	char *child, *ike;
 
 	child = request->get_str(request, NULL, "child");
 	ike = request->get_str(request, NULL, "ike");
@@ -695,53 +666,13 @@ CALLBACK(uninstall, vici_message_t*,
 
 	DBG1(DBG_CFG, "vici uninstall '%s'", child);
 
-	if (!ike)
-	{
-		enumerator = charon->shunts->create_enumerator(charon->shunts);
-		while (enumerator->enumerate(enumerator, &ns, &child_cfg))
-		{
-			if (ns && streq(child, child_cfg->get_name(child_cfg)))
-			{
-				ike = strdup(ns);
-				break;
-			}
-		}
-		enumerator->destroy(enumerator);
-		if (ike)
-		{
-			if (charon->shunts->uninstall(charon->shunts, ike, child))
-			{
-				free(ike);
-				return send_reply(this, NULL);
-			}
-			free(ike);
-			return send_reply(this, "uninstalling policy '%s' failed", child);
-		}
-	}
-	else if (charon->shunts->uninstall(charon->shunts, ike, child))
+	if (charon->shunts->uninstall(charon->shunts, ike, child))
 	{
 		return send_reply(this, NULL);
 	}
-
-	enumerator = charon->traps->create_enumerator(charon->traps);
-	while (enumerator->enumerate(enumerator, &peer_cfg, &child_sa))
+	else if (charon->traps->uninstall(charon->traps, ike, child))
 	{
-		if ((!ike || streq(ike, peer_cfg->get_name(peer_cfg))) &&
-			streq(child, child_sa->get_name(child_sa)))
-		{
-			reqid = child_sa->get_reqid(child_sa);
-			break;
-		}
-	}
-	enumerator->destroy(enumerator);
-
-	if (reqid)
-	{
-		if (charon->traps->uninstall(charon->traps, reqid))
-		{
-			return send_reply(this, NULL);
-		}
-		return send_reply(this, "uninstalling policy '%s' failed", child);
+		return send_reply(this, NULL);
 	}
 	return send_reply(this, "policy '%s' not found", child);
 }

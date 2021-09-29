@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -205,6 +205,26 @@ openssl_crypter_t *openssl_crypter_create(encryption_algorithm_t algo,
 					break;
 				case 32:        /* AES-256 */
 					this->cipher = EVP_get_cipherbyname("aes-256-cbc");
+					break;
+				default:
+					free(this);
+					return NULL;
+			}
+			break;
+		case ENCR_AES_ECB:
+			switch (key_size)
+			{
+				case 0:
+					key_size = 16;
+					/* FALL */
+				case 16:        /* AES 128 */
+					this->cipher = EVP_get_cipherbyname("aes-128-ecb");
+					break;
+				case 24:        /* AES-192 */
+					this->cipher = EVP_get_cipherbyname("aes-192-ecb");
+					break;
+				case 32:        /* AES-256 */
+					this->cipher = EVP_get_cipherbyname("aes-256-ecb");
 					break;
 				default:
 					free(this);

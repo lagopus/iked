@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2016 Andreas Steffen
+ * Copyright (C) 2018 Tobias Brunner
+ * Copyright (C) 2016-2018 Andreas Steffen
  * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -48,14 +49,14 @@ struct tpm_tss_t {
 	/**
 	 * Get TPM version supported by TSS
 	 *
-	 * @return		TPM version
+	 * @return				TPM version
 	 */
 	tpm_version_t (*get_version)(tpm_tss_t *this);
 
 	/**
 	 * Get TPM version info (TPM 1.2 only)
 	 *
-	 * @return			TPM version info struct
+	 * @return				TPM version info struct
 	 */
 	chunk_t (*get_version_info)(tpm_tss_t *this);
 
@@ -74,10 +75,19 @@ struct tpm_tss_t {
 	/**
 	 * Get public key from TPM using its object handle (TPM 2.0 only)
 	 *
-	 * @param handle	key object handle
-	 * @return			public key in PKCS#1 format
+	 * @param handle		key object handle
+	 * @return				public key in PKCS#1 format
 	 */
 	chunk_t (*get_public)(tpm_tss_t *this, uint32_t handle);
+
+	/**
+	 * Return signature schemes supported by the given key (TPM 2.0 only)
+	 *
+	 * @param handle		key object handle
+	 * @return				enumerator over signature_params_t*
+	 */
+	enumerator_t *(*supported_signature_schemes)(tpm_tss_t *this,
+												 uint32_t handle);
 
 	/**
 	 * Retrieve the current value of a PCR register in a given PCR bank
@@ -125,14 +135,15 @@ struct tpm_tss_t {
 	 * @param handle		object handle of TPM key to be used for signature
 	 * @param hierarchy		hierarchy the TPM key object is attached to
 	 * @param scheme		scheme to be used for signature
+	 * @param param			signature scheme parameters
 	 * @param data			data to be hashed and signed
 	 * @param pin			PIN code or empty chunk
 	 * @param signature		returns signature
 	 * @return				TRUE if signature succeeded
 	 */
 	bool (*sign)(tpm_tss_t *this, uint32_t hierarchy, uint32_t handle,
-				 signature_scheme_t scheme, chunk_t data, chunk_t pin,
-				 chunk_t *signature);
+				 signature_scheme_t scheme, void *params, chunk_t data,
+				 chunk_t pin, chunk_t *signature);
 
 	/**
 	 * Get random bytes from the TPM
@@ -169,8 +180,15 @@ struct tpm_tss_t {
 tpm_tss_t *tpm_tss_probe(tpm_version_t version);
 
 /**
- * Dummy libtpmtss initialization function needed for integrity test
+ * libtpmtss initialization function
+ *
+ * @return					TRUE if initialization was successful
  */
-void libtpmtss_init(void);
+bool libtpmtss_init(void);
+
+/**
+ * libtpmtss de-initialization function
+ */
+void libtpmtss_deinit(void);
 
 #endif /** TPM_TSS_H_ @}*/

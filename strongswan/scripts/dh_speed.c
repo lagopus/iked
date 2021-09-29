@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -47,6 +47,7 @@ struct {
 	{"ecp192",			ECP_192_BIT},
 	{"ecp224",			ECP_224_BIT},
 	{"curve25519",		CURVE_25519},
+	{"curve448",		CURVE_448},
 };
 
 static void start_timing(struct timespec *start)
