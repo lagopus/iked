@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2012-2016 Tobias Brunner
  * Copyright (C) 2006-2009 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -353,10 +353,12 @@ struct bus_t {
 	 * @param nonce_r	responder's nonce
 	 * @param rekey		IKE_SA we are rekeying, if any (IKEv2 only)
 	 * @param shared	shared key used for key derivation (IKEv1-PSK only)
+	 * @param method	auth method for key derivation (IKEv1-non-PSK only)
 	 */
 	void (*ike_keys)(bus_t *this, ike_sa_t *ike_sa, diffie_hellman_t *dh,
 					 chunk_t dh_other, chunk_t nonce_i, chunk_t nonce_r,
-					 ike_sa_t *rekey, shared_key_t *shared);
+					 ike_sa_t *rekey, shared_key_t *shared,
+					 auth_method_t method);
 
 	/**
 	 * IKE_SA derived keys hook.

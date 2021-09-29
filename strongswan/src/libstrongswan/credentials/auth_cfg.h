@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2008-2015 Tobias Brunner
  * Copyright (C) 2007-2009 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -84,6 +84,8 @@ enum auth_rule_t {
 	AUTH_RULE_XAUTH_BACKEND,
 	/** XAuth identity to use or require, identification_t* */
 	AUTH_RULE_XAUTH_IDENTITY,
+	/** subject of certificate authority, identification_t* */
+	AUTH_RULE_CA_IDENTITY,
 	/** certificate authority, certificate_t* */
 	AUTH_RULE_CA_CERT,
 	/** intermediate certificate in trustchain, certificate_t* */
@@ -141,7 +143,7 @@ extern enum_name_t *auth_rule_names;
  * RFC4739 defines multiple authentication rounds. This class defines such
  * a round from a configuration perspective, either for the local or the remote
  * peer. Local configs are called "rulesets". They define how we authenticate.
- * Remote peer configs are called "constraits". They define what is needed to
+ * Remote peer configs are called "constraints". They define what is needed to
  * complete the authentication round successfully.
  *
  * @verbatim

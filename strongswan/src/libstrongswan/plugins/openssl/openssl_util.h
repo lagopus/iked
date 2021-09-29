@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -101,7 +101,7 @@ bool openssl_bn2chunk(const BIGNUM *bn, chunk_t *chunk);
  * @param asn1		asn1 object to convert
  * @return			chunk, pointing into asn1 object
  */
-chunk_t openssl_asn1_obj2chunk(ASN1_OBJECT *asn1);
+chunk_t openssl_asn1_obj2chunk(const ASN1_OBJECT *asn1);
 
 /**
  * Convert an OpenSSL ASN1_STRING to a chunk.
@@ -109,7 +109,7 @@ chunk_t openssl_asn1_obj2chunk(ASN1_OBJECT *asn1);
  * @param asn1		asn1 string to convert
  * @return			chunk, pointing into asn1 string
  */
-chunk_t openssl_asn1_str2chunk(ASN1_STRING *asn1);
+chunk_t openssl_asn1_str2chunk(const ASN1_STRING *asn1);
 
 /**
  * Convert an openssl X509_NAME to a identification_t of type ID_DER_ASN1_DN.
@@ -125,7 +125,7 @@ identification_t *openssl_x509_name2id(X509_NAME *name);
  * @param obj		openssl ASN1 object
  * @returns			OID, as defined in <asn1/oid.h>
  */
-int openssl_asn1_known_oid(ASN1_OBJECT *obj);
+int openssl_asn1_known_oid(const ASN1_OBJECT *obj);
 
 /**
  * Convert an OpenSSL ASN1_TIME to a time_t.
@@ -133,7 +133,7 @@ int openssl_asn1_known_oid(ASN1_OBJECT *obj);
  * @param time		openssl ASN1_TIME
  * @returns			time_t, 0 on error
  */
-time_t openssl_asn1_to_time(ASN1_TIME *time);
+time_t openssl_asn1_to_time(const ASN1_TIME *time);
 
 /**
  * Compatibility macros

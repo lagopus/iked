@@ -2,7 +2,7 @@
  * Copyright (C) 2006 Martin Will
  * Copyright (C) 2000-2016 Andreas Steffen
  *
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -825,7 +825,6 @@ chunk_t asn1_simple_object(asn1_t tag, chunk_t content)
 
 	u_char *pos = asn1_build_object(&object, tag, content.len);
 	memcpy(pos, content.ptr, content.len);
-	pos += content.len;
 
 	return object;
 }
@@ -852,15 +851,14 @@ chunk_t asn1_bitstring(const char *mode, chunk_t content)
  */
 chunk_t asn1_integer(const char *mode, chunk_t content)
 {
-	chunk_t object;
+	chunk_t zero = chunk_from_chars(0x00), object;
 	size_t len;
 	u_char *pos;
 	bool move;
 
-
 	if (content.len == 0)
 	{	/* make sure 0 is encoded properly */
-		content = chunk_from_chars(0x00);
+		content = zero;
 		move = FALSE;
 	}
 	else

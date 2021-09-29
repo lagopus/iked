@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2007 Martin Willi
  * Copyright (C) 2006-2007 Fabian Hartmann, Noah Heusser
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,6 +40,11 @@ struct private_ike_config_t {
 	 * Are we the initiator?
 	 */
 	bool initiator;
+
+	/**
+	 * Did we request a virtual IP?
+	 */
+	bool vip_requested;
 
 	/**
 	 * Received list of virtual IPs, host_t*
@@ -149,6 +154,12 @@ static void process_attribute(private_ike_config_t *this,
 			/* fall */
 		case INTERNAL_IP6_ADDRESS:
 		{
+			if (this->initiator && !this->vip_requested)
+			{
+				handle_attribute(this, ca);
+				return;
+			}
+
 			addr = ca->get_chunk(ca);
 			if (addr.len == 0)
 			{
@@ -270,6 +281,7 @@ METHOD(task_t, build_i, status_t,
 				cp->add_attribute(cp, build_vip(host));
 			}
 			enumerator->destroy(enumerator);
+			this->vip_requested = TRUE;
 		}
 
 		enumerator = charon->attributes->create_initiator_enumerator(
@@ -304,6 +316,10 @@ METHOD(task_t, build_i, status_t,
 		if (cp)
 		{
 			message->add_payload(message, (payload_t*)cp);
+		}
+		else
+		{	/* we don't expect a CFG_REPLY */
+			return SUCCESS;
 		}
 	}
 	return NEED_MORE;

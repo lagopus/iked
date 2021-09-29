@@ -1,10 +1,10 @@
 /*
- * Copyright (C) 2006-2014 Tobias Brunner
+ * Copyright (C) 2006-2018 Tobias Brunner
  * Copyright (C) 2005-2010 Martin Willi
  * Copyright (C) 2010 revosec AG
  * Copyright (C) 2006 Daniel Roethlisberger
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1744,12 +1744,25 @@ static status_t generate_message(private_message_t *this, keymat_t *keymat,
 	{
 		aead = keymat->get_aead(keymat, FALSE);
 	}
-	if (aead && encrypting)
+	if (encrypting)
 	{
-		*encrypted = wrap_payloads(this);
-		(*encrypted)->set_transform(*encrypted, aead);
+		if (aead)
+		{
+			*encrypted = wrap_payloads(this);
+			(*encrypted)->set_transform(*encrypted, aead);
+		}
+		else if (this->exchange_type == INFORMATIONAL ||
+				 this->exchange_type == INFORMATIONAL_V1)
+		{	/* allow sending unencrypted INFORMATIONALs */
+			encrypting = FALSE;
+		}
+		else
+		{
+			DBG1(DBG_ENC, "unable to encrypt payloads without AEAD transform");
+			return FAILED;
+		}
 	}
-	else
+	if (!encrypting)
 	{
 		DBG2(DBG_ENC, "not encrypting payloads");
 		this->is_encrypted = FALSE;
@@ -2095,8 +2108,8 @@ METHOD(message_t, fragment, status_t,
 
 	count = data.len / frag_len + (data.len % frag_len ? 1 : 0);
 	this->fragments = array_create(0, count);
-	DBG1(DBG_ENC, "splitting IKE message with length of %zu bytes into "
-		 "%hu fragments", len, count);
+	DBG1(DBG_ENC, "splitting IKE message (%zu bytes) into %hu fragments", len,
+		 count);
 	for (num = 1; num <= count; num++)
 	{
 		len = min(data.len, frag_len);
@@ -2821,11 +2834,11 @@ METHOD(message_t, add_fragment_v1, status_t,
 		return NEED_MORE;
 	}
 
-	DBG1(DBG_ENC, "received fragment #%hhu, reassembling fragmented IKE "
-		 "message", num);
-
 	data = merge_fragments(this, message);
 	this->packet->set_data(this->packet, data);
+	DBG1(DBG_ENC, "received fragment #%hhu, reassembled fragmented IKE "
+		 "message (%zu bytes)", num, data.len);
+
 	this->parser = parser_create(data);
 
 	if (parse_header(this) != SUCCESS)
@@ -2842,9 +2855,11 @@ METHOD(message_t, add_fragment_v2, status_t,
 	encrypted_fragment_payload_t *encrypted_fragment;
 	encrypted_payload_t *encrypted;
 	payload_t *payload;
+	aead_t *aead;
 	enumerator_t *enumerator;
 	chunk_t data;
 	uint16_t total, num;
+	size_t len;
 	status_t status;
 
 	if (!this->frag)
@@ -2904,15 +2919,30 @@ METHOD(message_t, add_fragment_v2, status_t,
 		return NEED_MORE;
 	}
 
-	DBG1(DBG_ENC, "received fragment #%hu of %hu, reassembling fragmented IKE "
-		 "message", num, total);
+	encrypted = (encrypted_payload_t*)encrypted_fragment;
+	aead = encrypted->get_transform(encrypted);
 
 	data = merge_fragments(this, message);
+
 	encrypted = encrypted_payload_create_from_plain(this->first_payload, data);
+	encrypted->set_transform(encrypted, aead);
 	this->payloads->insert_last(this->payloads, encrypted);
 	/* update next payload type (could be an unencrypted payload) */
 	this->payloads->get_first(this->payloads, (void**)&payload);
 	this->first_payload = payload->get_type(payload);
+
+	/* we report the length of the complete IKE message when splitting, do the
+	 * same here, so add the IKEv2 header len to the reassembled payload data */
+	len = 28;
+	enumerator = create_payload_enumerator(this);
+	while (enumerator->enumerate(enumerator, &payload))
+	{
+		len += payload->get_length(payload);
+	}
+	enumerator->destroy(enumerator);
+
+	DBG1(DBG_ENC, "received fragment #%hu of %hu, reassembled fragmented IKE "
+		 "message (%zu bytes)", num, total, len);
 	return SUCCESS;
 }
 

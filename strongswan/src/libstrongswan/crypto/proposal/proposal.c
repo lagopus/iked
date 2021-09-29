@@ -58,6 +58,11 @@ struct private_proposal_t {
 	array_t *transforms;
 
 	/**
+	 * Types of transforms contained, as transform_type_t
+	 */
+	array_t *types;
+
+	/**
 	 * senders SPI
 	 */
 	uint64_t spi;
@@ -67,6 +72,101 @@ struct private_proposal_t {
 	 */
 	u_int number;
 };
+
+/**
+ * This is a hack to not change the previous order when printing proposals
+ */
+static transform_type_t type_for_sort(const void *type)
+{
+	const transform_type_t *t = type;
+
+	switch (*t)
+	{
+		case PSEUDO_RANDOM_FUNCTION:
+			return INTEGRITY_ALGORITHM;
+		case INTEGRITY_ALGORITHM:
+			return PSEUDO_RANDOM_FUNCTION;
+		default:
+			return *t;
+	}
+}
+
+/**
+ * Sort transform types
+ */
+static int type_sort(const void *a, const void *b, void *user)
+{
+	transform_type_t ta = type_for_sort(a), tb = type_for_sort(b);
+	return ta - tb;
+}
+
+/**
+ * Find a transform type
+ */
+static int type_find(const void *a, const void *b)
+{
+	return type_sort(a, b, NULL);
+}
+
+/**
+ * Check if the given transform type is already in the set
+ */
+static bool contains_type(array_t *types, transform_type_t type)
+{
+	return array_bsearch(types, &type, type_find, NULL) != -1;
+}
+
+/**
+ * Add the given transform type to the set
+ */
+static void add_type(array_t *types, transform_type_t type)
+{
+	if (!contains_type(types, type))
+	{
+		array_insert(types, ARRAY_TAIL, &type);
+		array_sort(types, type_sort, NULL);
+	}
+}
+
+/**
+ * Merge two sets of transform types into a new array
+ */
+static array_t *merge_types(private_proposal_t *this, private_proposal_t *other)
+{
+	array_t *types;
+	transform_type_t type;
+	int i, count;
+
+	count = max(array_count(this->types), array_count(other->types));
+	types = array_create(sizeof(transform_type_t), count);
+
+	for (i = 0; i < count; i++)
+	{
+		if (array_get(this->types, i, &type))
+		{
+			add_type(types, type);
+		}
+		if (array_get(other->types, i, &type))
+		{
+			add_type(types, type);
+		}
+	}
+	return types;
+}
+
+/**
+ * Remove the given transform type from the set
+ */
+static void remove_type(private_proposal_t *this, transform_type_t type)
+{
+	int i;
+
+	i = array_bsearch(this->types, &type, type_find, NULL);
+	if (i >= 0)
+	{
+		array_remove(this->types, i, NULL);
+	}
+}
 
 /**
  * Struct used to store different kinds of algorithms.
@@ -91,6 +191,7 @@ METHOD(proposal_t, add_algorithm, void,
 	};
 
 	array_insert(this->transforms, ARRAY_TAIL, &entry);
+	add_type(this->types, type);
 }
 
 CALLBACK(alg_filter, bool,
@@ -201,41 +302,17 @@ METHOD(proposal_t, promote_dh_group, bool,
 	return found;
 }
 
-METHOD(proposal_t, strip_dh, void,
-	private_proposal_t *this, diffie_hellman_group_t keep)
-{
-	enumerator_t *enumerator;
-	entry_t *entry;
-
-	enumerator = array_create_enumerator(this->transforms);
-	while (enumerator->enumerate(enumerator, &entry))
-	{
-		if (entry->type == DIFFIE_HELLMAN_GROUP &&
-			entry->alg != keep)
-		{
-			array_remove_at(this->transforms, enumerator);
-		}
-	}
-	enumerator->destroy(enumerator);
-}
-
 /**
- * Select a matching proposal from this and other, insert into selected.
+ * Select a matching proposal from this and other.
  */
 static bool select_algo(private_proposal_t *this, proposal_t *other,
-						proposal_t *selected, transform_type_t type, bool priv)
+						transform_type_t type, proposal_selection_flag_t flags,
+						bool log, uint16_t *alg, uint16_t *ks)
 {
 	enumerator_t *e1, *e2;
 	uint16_t alg1, alg2, ks1, ks2;
 	bool found = FALSE, optional = FALSE;
 
-	if (type == INTEGRITY_ALGORITHM &&
-		selected->get_algorithm(selected, ENCRYPTION_ALGORITHM, &alg1, NULL) &&
-		encryption_algorithm_is_aead(alg1))
-	{
-		/* no integrity algorithm required, we have an AEAD */
-		return TRUE;
-	}
 	if (type == DIFFIE_HELLMAN_GROUP)
 	{
 		optional = this->protocol == PROTO_ESP || this->protocol == PROTO_AH;
@@ -281,33 +358,90 @@ static bool select_algo(private_proposal_t *this, proposal_t *other,
 		{
 			if (alg1 == alg2 && ks1 == ks2)
 			{
-				if (!priv && alg1 >= 1024)
+				if ((flags & PROPOSAL_SKIP_PRIVATE) && alg1 >= 1024)
 				{
-					/* accept private use algorithms only if requested */
-					DBG1(DBG_CFG, "an algorithm from private space would match, "
-						 "but peer implementation is unknown, skipped");
+					if (log)
+					{
+						DBG1(DBG_CFG, "an algorithm from private space would "
+							 "match, but peer implementation is unknown, "
+							 "skipped");
+					}
 					continue;
 				}
-				selected->add_algorithm(selected, type, alg1, ks1);
+				*alg = alg1;
+				*ks = ks1;
 				found = TRUE;
 				break;
 			}
 		}
 	}
-	/* no match in all comparisons */
 	e1->destroy(e1);
 	e2->destroy(e2);
-
-	if (!found)
-	{
-		DBG2(DBG_CFG, "  no acceptable %N found", transform_type_names, type);
-	}
 	return found;
 }
 
+/**
+ * Select algorithms from the given proposals, if selected is given, the result
+ * is stored there and errors are logged.
+ */
+static bool select_algos(private_proposal_t *this, proposal_t *other,
+						 proposal_t *selected, proposal_selection_flag_t flags)
+{
+	transform_type_t type;
+	array_t *types;
+	bool skip_integrity = FALSE;
+	int i;
+
+	types = merge_types(this, (private_proposal_t*)other);
+	for (i = 0; i < array_count(types); i++)
+	{
+		uint16_t alg = 0, ks = 0;
+
+		array_get(types, i, &type);
+		if (type == INTEGRITY_ALGORITHM && skip_integrity)
+		{
+			continue;
+		}
+		if (type == DIFFIE_HELLMAN_GROUP && (flags & PROPOSAL_SKIP_DH))
+		{
+			continue;
+		}
+		if (select_algo(this, other, type, flags, selected != NULL, &alg, &ks))
+		{
+			if (alg == 0 && type != EXTENDED_SEQUENCE_NUMBERS)
+			{	/* 0 is "valid" for extended sequence numbers, for other
+				 * transforms it either means NONE or is reserved */
+				continue;
+			}
+			if (selected)
+			{
+				selected->add_algorithm(selected, type, alg, ks);
+			}
+			if (type == ENCRYPTION_ALGORITHM &&
+				encryption_algorithm_is_aead(alg))
+			{
+				/* no integrity algorithm required, we have an AEAD */
+				skip_integrity = TRUE;
+			}
+		}
+		else
+		{
+			if (selected)
+			{
+				DBG2(DBG_CFG, "  no acceptable %N found", transform_type_names,
+					 type);
+			}
+			array_destroy(types);
+			return FALSE;
+		}
+	}
+	array_destroy(types);
+	return TRUE;
+}
+
 METHOD(proposal_t, select_proposal, proposal_t*,
-	private_proposal_t *this, proposal_t *other, bool other_remote,
-	bool private)
+	private_proposal_t *this, proposal_t *other,
+	proposal_selection_flag_t flags)
 {
 	proposal_t *selected;
 
@@ -319,30 +453,35 @@ METHOD(proposal_t, select_proposal, proposal_t*,
 		return NULL;
 	}
 
-	if (other_remote)
+	if (flags & PROPOSAL_PREFER_SUPPLIED)
+	{
+		selected = proposal_create(this->protocol, this->number);
+		selected->set_spi(selected, this->spi);
+	}
+	else
 	{
 		selected = proposal_create(this->protocol, other->get_number(other));
 		selected->set_spi(selected, other->get_spi(other));
 	}
-	else
-	{
-		selected = proposal_create(this->protocol, this->number);
-		selected->set_spi(selected, this->spi);
 
-	}
-
-	if (!select_algo(this, other, selected, ENCRYPTION_ALGORITHM, private) ||
-		!select_algo(this, other, selected, PSEUDO_RANDOM_FUNCTION, private) ||
-		!select_algo(this, other, selected, INTEGRITY_ALGORITHM, private) ||
-		!select_algo(this, other, selected, DIFFIE_HELLMAN_GROUP, private) ||
-		!select_algo(this, other, selected, EXTENDED_SEQUENCE_NUMBERS, private))
+	if (!select_algos(this, other, selected, flags))
 	{
 		selected->destroy(selected);
 		return NULL;
 	}
-
 	DBG2(DBG_CFG, "  proposal matches");
 	return selected;
+}
+
+METHOD(proposal_t, matches, bool,
+	private_proposal_t *this, proposal_t *other,
+	proposal_selection_flag_t flags)
+{
+	if (this->protocol != other->get_protocol(other))
+	{
+		return FALSE;
+	}
+	return select_algos(this, other, NULL, flags);
 }
 
 METHOD(proposal_t, get_protocol, protocol_id_t,
@@ -409,20 +548,31 @@ METHOD(proposal_t, get_number, u_int,
 METHOD(proposal_t, equals, bool,
 	private_proposal_t *this, proposal_t *other)
 {
+	transform_type_t type;
+	array_t *types;
+	int i;
+
 	if (&this->public == other)
 	{
 		return TRUE;
 	}
-	return (
-		algo_list_equals(this, other, ENCRYPTION_ALGORITHM) &&
-		algo_list_equals(this, other, INTEGRITY_ALGORITHM) &&
-		algo_list_equals(this, other, PSEUDO_RANDOM_FUNCTION) &&
-		algo_list_equals(this, other, DIFFIE_HELLMAN_GROUP) &&
-		algo_list_equals(this, other, EXTENDED_SEQUENCE_NUMBERS));
+
+	types = merge_types(this, (private_proposal_t*)other);
+	for (i = 0; i < array_count(types); i++)
+	{
+		array_get(types, i, &type);
+		if (!algo_list_equals(this, other, type))
+		{
+			array_destroy(types);
+			return FALSE;
+		}
+	}
+	array_destroy(types);
+	return TRUE;
 }
 
 METHOD(proposal_t, clone_, proposal_t*,
-	private_proposal_t *this)
+	private_proposal_t *this, proposal_selection_flag_t flags)
 {
 	private_proposal_t *clone;
 	enumerator_t *enumerator;
@@ -433,7 +583,16 @@ METHOD(proposal_t, clone_, proposal_t*,
 	enumerator = array_create_enumerator(this->transforms);
 	while (enumerator->enumerate(enumerator, &entry))
 	{
+		if (entry->alg >= 1024 && (flags & PROPOSAL_SKIP_PRIVATE))
+		{
+			continue;
+		}
+		if (entry->type == DIFFIE_HELLMAN_GROUP && (flags & PROPOSAL_SKIP_DH))
+		{
+			continue;
+		}
 		array_insert(clone->transforms, ARRAY_TAIL, entry);
+		add_type(clone->types, entry->type);
 	}
 	enumerator->destroy(enumerator);
 
@@ -479,6 +638,7 @@ static void remove_transform(private_proposal_t *this, transform_type_t type)
 		}
 	}
 	e->destroy(e);
+	remove_type(this, type);
 }
 
 /**
@@ -571,6 +731,14 @@ static bool check_proposal(private_proposal_t *this)
 			 * we MUST NOT propose any integrity algorithms */
 			remove_transform(this, INTEGRITY_ALGORITHM);
 		}
+		else if (this->protocol == PROTO_IKE &&
+				 !get_algorithm(this, INTEGRITY_ALGORITHM, NULL, NULL))
+		{
+			DBG1(DBG_CFG, "an integrity algorithm is mandatory in %N proposals "
+				 "with classic (non-AEAD) encryption algorithms",
+				 protocol_id_names, this->protocol);
+			return FALSE;
+		}
 	}
 	else
 	{	/* AES-GMAC is parsed as encryption algorithm, so we map that to the
@@ -605,6 +773,7 @@ static bool check_proposal(private_proposal_t *this)
 			}
 		}
 		e->destroy(e);
+		remove_type(this, ENCRYPTION_ALGORITHM);
 
 		if (!get_algorithm(this, INTEGRITY_ALGORITHM, NULL, NULL))
 		{
@@ -623,6 +792,7 @@ static bool check_proposal(private_proposal_t *this)
 	}
 
 	array_compress(this->transforms);
+	array_compress(this->types);
 	return TRUE;
 }
 
@@ -646,30 +816,44 @@ static bool add_string_algo(private_proposal_t *this, const char *alg)
 }
 
 /**
- * print all algorithms of a kind to buffer
+ * Print all algorithms of the given type
  */
 static int print_alg(private_proposal_t *this, printf_hook_data_t *data,
-					 u_int kind, void *names, bool *first)
+					 transform_type_t type, bool *first)
 {
 	enumerator_t *enumerator;
 	size_t written = 0;
-	uint16_t alg, size;
+	entry_t *entry;
+	enum_name_t *names;
 
-	enumerator = create_enumerator(this, kind);
-	while (enumerator->enumerate(enumerator, &alg, &size))
+	names = transform_get_enum_names(type);
+
+	enumerator = array_create_enumerator(this->transforms);
+	while (enumerator->enumerate(enumerator, &entry))
 	{
+		char *prefix = "/";
+
+		if (type != entry->type)
+		{
+			continue;
+		}
 		if (*first)
 		{
-			written += print_in_hook(data, "%N", names, alg);
+			prefix = "";
 			*first = FALSE;
+		}
+		if (names)
+		{
+			written += print_in_hook(data, "%s%N", prefix, names, entry->alg);
 		}
 		else
 		{
-			written += print_in_hook(data, "/%N", names, alg);
+			written += print_in_hook(data, "%sUNKNOWN_%u_%u", prefix,
+									 entry->type, entry->alg);
 		}
-		if (size)
+		if (entry->key_size)
 		{
-			written += print_in_hook(data, "_%u", size);
+			written += print_in_hook(data, "_%u", entry->key_size);
 		}
 	}
 	enumerator->destroy(enumerator);
@@ -685,6 +869,7 @@ int proposal_printf_hook(printf_hook_data_t *data, printf_hook_spec_t *spec,
 	private_proposal_t *this = *((private_proposal_t**)(args[0]));
 	linked_list_t *list = *((linked_list_t**)(args[0]));
 	enumerator_t *enumerator;
+	transform_type_t *type;
 	size_t written = 0;
 	bool first = TRUE;
 
@@ -713,16 +898,12 @@ int proposal_printf_hook(printf_hook_data_t *data, printf_hook_spec_t *spec,
 	}
 
 	written = print_in_hook(data, "%N:", protocol_id_names, this->protocol);
-	written += print_alg(this, data, ENCRYPTION_ALGORITHM,
-						 encryption_algorithm_names, &first);
-	written += print_alg(this, data, INTEGRITY_ALGORITHM,
-						 integrity_algorithm_names, &first);
-	written += print_alg(this, data, PSEUDO_RANDOM_FUNCTION,
-						 pseudo_random_function_names, &first);
-	written += print_alg(this, data, DIFFIE_HELLMAN_GROUP,
-						 diffie_hellman_group_names, &first);
-	written += print_alg(this, data, EXTENDED_SEQUENCE_NUMBERS,
-						 extended_sequence_numbers_names, &first);
+	enumerator = array_create_enumerator(this->types);
+	while (enumerator->enumerate(enumerator, &type))
+	{
+		written += print_alg(this, data, *type, &first);
+	}
+	enumerator->destroy(enumerator);
 	return written;
 }
 
@@ -730,6 +911,7 @@ METHOD(proposal_t, destroy, void,
 	private_proposal_t *this)
 {
 	array_destroy(this->transforms);
+	array_destroy(this->types);
 	free(this);
 }
 
@@ -747,8 +929,8 @@ proposal_t *proposal_create(protocol_id_t protocol, u_int number)
 			.get_algorithm = _get_algorithm,
 			.has_dh_group = _has_dh_group,
 			.promote_dh_group = _promote_dh_group,
-			.strip_dh = _strip_dh,
 			.select = _select_proposal,
+			.matches = _matches,
 			.get_protocol = _get_protocol,
 			.set_spi = _set_spi,
 			.get_spi = _get_spi,
@@ -760,6 +942,7 @@ proposal_t *proposal_create(protocol_id_t protocol, u_int number)
 		.protocol = protocol,
 		.number = number,
 		.transforms = array_create(sizeof(entry_t), 0),
+		.types = array_create(sizeof(transform_type_t), 0),
 	);
 
 	return &this->public;
@@ -794,7 +977,7 @@ static bool proposal_add_supported_ike(private_proposal_t *this, bool aead)
 					add_algorithm(this, ENCRYPTION_ALGORITHM, encryption, 256);
 					break;
 				case ENCR_CHACHA20_POLY1305:
-					add_algorithm(this, ENCRYPTION_ALGORITHM, encryption, 256);
+					add_algorithm(this, ENCRYPTION_ALGORITHM, encryption, 0);
 					break;
 				default:
 					break;
@@ -1131,4 +1314,60 @@ proposal_t *proposal_create_from_string(protocol_id_t protocol, const char *algs
 	}
 
 	return &this->public;
+}
+
+/*
+ * Described in header
+ */
+proposal_t *proposal_select(linked_list_t *configured, linked_list_t *supplied,
+							proposal_selection_flag_t flags)
+{
+	enumerator_t *prefer_enum, *match_enum;
+	proposal_t *proposal, *match, *selected = NULL;
+
+	if (flags & PROPOSAL_PREFER_SUPPLIED)
+	{
+		prefer_enum = supplied->create_enumerator(supplied);
+		match_enum = configured->create_enumerator(configured);
+	}
+	else
+	{
+		prefer_enum = configured->create_enumerator(configured);
+		match_enum = supplied->create_enumerator(supplied);
+	}
+
+	while (prefer_enum->enumerate(prefer_enum, &proposal))
+	{
+		if (flags & PROPOSAL_PREFER_SUPPLIED)
+		{
+			configured->reset_enumerator(configured, match_enum);
+		}
+		else
+		{
+			supplied->reset_enumerator(supplied, match_enum);
+		}
+		while (match_enum->enumerate(match_enum, &match))
+		{
+			selected = proposal->select(proposal, match, flags);
+			if (selected)
+			{
+				DBG2(DBG_CFG, "received proposals: %#P", supplied);
+				DBG2(DBG_CFG, "configured proposals: %#P", configured);
+				DBG1(DBG_CFG, "selected proposal: %P", selected);
+				break;
+			}
+		}
+		if (selected)
+		{
+			break;
+		}
+	}
+	prefer_enum->destroy(prefer_enum);
+	match_enum->destroy(match_enum);
+	if (!selected)
+	{
+		DBG1(DBG_CFG, "received proposals: %#P", supplied);
+		DBG1(DBG_CFG, "configured proposals: %#P", configured);
+	}
+	return selected;
 }

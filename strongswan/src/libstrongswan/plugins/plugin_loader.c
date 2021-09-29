@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2010-2014 Tobias Brunner
  * Copyright (C) 2007 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -658,7 +658,7 @@ static bool loadable_feature_matches(registered_feature_t *a,
 }
 
 /**
- * Returns a compatible plugin feature for the given depencency
+ * Returns a compatible plugin feature for the given dependency
  */
 static bool find_compatible_feature(private_plugin_loader_t *this,
 									plugin_feature_t *dependency)

@@ -15,14 +15,14 @@
 
 package org.strongswan.android.utils;
 
-import android.support.annotation.NonNull;
-
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+
+import androidx.annotation.NonNull;
 
 /**
  * Class that represents a range of IP addresses. This range could be a proper subnet, but that's
@@ -76,7 +76,7 @@ public class IPRange implements Comparable<IPRange>
 
 	public IPRange(String from, String to) throws UnknownHostException
 	{
-		this(InetAddress.getByName(from), InetAddress.getByName(to));
+		this(Utils.parseInetAddress(from), Utils.parseInetAddress(to));
 	}
 
 	public IPRange(InetAddress from, InetAddress to)
@@ -106,7 +106,7 @@ public class IPRange implements Comparable<IPRange>
 
 	public IPRange(String base, int prefix) throws UnknownHostException
 	{
-		this(InetAddress.getByName(base), prefix);
+		this(Utils.parseInetAddress(base), prefix);
 	}
 
 	public IPRange(InetAddress base, int prefix)

@@ -52,7 +52,7 @@ charon.crypto_test.bench_size = 1024
 	Buffer size used for crypto benchmark.
 
 charon.crypto_test.bench_time = 50
-	Number of iterations to test each algorithm.
+	Time in ms during which crypto algorithm performance is measured.
 
 charon.crypto_test.on_add = no
 	Test crypto algorithms during registration (requires test vectors provided
@@ -286,8 +286,16 @@ charon.prefer_configured_proposals = yes
 	notifies).
 
 charon.prefer_temporary_addrs = no
-	By default public IPv6 addresses are preferred over temporary ones (RFC
-	4941), to make connections more stable. Enable this option to reverse this.
+	Controls whether permanent or temporary IPv6 addresses are used as source,
+	or announced as additional addresses if MOBIKE is used.
+
+	By default, permanent IPv6 source addresses are preferred over temporary
+	ones (RFC 4941), to make connections more stable. Enable this option to
+	reverse this.
+
+	It also affects which IPv6 addresses are announced as additional addresses
+	if MOBIKE is used.  If the option is disabled, only permanent addresses are
+	sent, and only temporary ones if it is enabled.
 
 charon.process_route = yes
 	Process RTM_NEWROUTE and RTM_DELROUTE events.
@@ -295,6 +303,22 @@ charon.process_route = yes
 charon.processor.priority_threads {}
 	Section to configure the number of reserved threads per priority class
 	see JOB PRIORITY MANAGEMENT in **strongswan.conf**(5).
+
+charon.rdn_matching = strict
+	How RDNs in subject DNs of certificates are matched against configured
+	identities (_strict_, _reordered_, or _relaxed_).
+
+	How RDNs in subject DNs of certificates are matched against configured
+	identities. Possible values are _strict_ (the default), _reordered_, and
+	_relaxed_. With _strict_ the number, type and order of all RDNs has to
+	match, wildcards (*) for the values of RDNs are allowed (that's the case
+	for all three variants). Using _reordered_ also matches DNs if the RDNs
+	appear in a different order, the number and type still has to match.
+	Finally, _relaxed_ also allows matches of DNs that contain more RDNs than
+	the configured identity (missing RDNs are treated like a wildcard match).
+
+	Note that _reordered_ and _relaxed_ impose a considerable overhead on memory
+	usage and runtime, in particular, for mismatches, compared to _strict_.
 
 charon.receive_delay = 0
 	Delay in ms for receiving packets, to simulate larger RTT.
@@ -369,6 +393,13 @@ charon.signature_authentication_constraints = yes
 	getting used as constraints against signature schemes employed in the
 	certificate chain, are also used as constraints against the signature scheme
 	used by peers during IKEv2.
+
+charon.spi_label = 0x0000000000000000
+	Value mixed into the local IKE SPIs after applying _spi_mask_.
+
+charon.spi_mask = 0x0000000000000000
+	Mask applied to local IKE SPIs before mixing in _spi_label_ (bits set will
+	be replaced with _spi_label_).
 
 charon.spi_min = 0xc0000000
 	The lower limit for SPIs requested from the kernel for IPsec SAs.

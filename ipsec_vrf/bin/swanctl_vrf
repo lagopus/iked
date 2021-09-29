@@ -1,0 +1,77 @@
+#!/bin/bash
+
+#
+# Copyright 2018 - 2020 Nippon Telegraph and Telephone Corporation.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# load libs.
+SCRIPT_PATH=`realpath $0`
+LIB_DIR=`dirname ${SCRIPT_PATH}`/../lib
+. ${LIB_DIR}/vars
+. ${LIB_DIR}/functions
+
+usage() {
+    cmd=`basename $0`
+    error "usage:"
+    error "   ${cmd} start"
+    error "   ${cmd} stop"
+    error "   ${cmd} restart"
+    error "   ${cmd} swanctl [SWANCTL_OPTIONS]..."
+    error "      [SWANCTL_OPTIONS]: See 'swanctl -h'."
+    error "   ${cmd} -h"
+    error "      print this message."
+}
+
+# Callback func for start().
+start_cb() {
+    ns_file=$1
+    vrf=$2
+    service="strongswan@${vrf}.service"
+    systemctl start $service
+}
+
+# Callback func for stop().
+stop_cb() {
+    ns_file=$1
+    vrf=$2
+    service="strongswan@${vrf}.service"
+    systemctl stop $service
+}
+
+# Callback func for swanctl.
+swanctl_cb() {
+    ns_file=$1
+    vrf=$2
+    args=${@:3}
+    nsenter --mount="${ns_file}" "${SWANCTL_CMD}" $args
+}
+
+if [ ! -d "${IPSEC_DIR}" ]; then
+    error "directory not found: ${IPSEC_DIR}"
+    exit 1
+fi
+
+if [ "x${SWANCTL_CMD}" = "x" ]; then
+    error "Not found swanctl cmd."
+    exit 1
+fi
+
+case $1 in
+    start) start "start_cb"; exit 0;;
+    restart) stop "stop_cb"; start "start_cb"; exit 0;;
+    stop) stop "stop_cb"; exit 0;;
+    swanctl) exec_cmd "swanctl_cb" ${@:2}; exit 0;;
+    -h|*) usage; exit 0;;
+esac

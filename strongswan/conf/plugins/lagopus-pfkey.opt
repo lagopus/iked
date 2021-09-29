@@ -1,4 +1,4 @@
-charon.plugins.lagopus-pfkey.socket_path := /var/tmp/lagopus.sock 
+charon.plugins.lagopus-pfkey.socket_path := /var/tmp/lagopus.sock
 	UNIX domain socket path for lagopus
 
 charon.plugins.lagopus-pfkey.events_buffer_size = 0

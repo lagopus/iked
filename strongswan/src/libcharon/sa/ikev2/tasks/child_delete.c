@@ -174,6 +174,11 @@ static void install_outbound(private_child_delete_t *this,
 	linked_list_t *my_ts, *other_ts;
 	status_t status;
 
+	if (!spi)
+	{
+		return;
+	}
+
 	child_sa = this->ike_sa->get_child_sa(this->ike_sa, protocol,
 										  spi, FALSE);
 	if (!child_sa)
@@ -265,6 +270,8 @@ static void process_payloads(private_child_delete_t *this, message_t *message)
 					case CHILD_REKEYED:
 						entry->rekeyed = TRUE;
 						break;
+					case CHILD_DELETED:
+						/* already deleted but not yet destroyed, ignore */
 					case CHILD_DELETING:
 						/* we don't send back a delete if we already initiated
 						 * a delete ourself */
@@ -310,7 +317,7 @@ static status_t destroy_and_reestablish(private_child_delete_t *this)
 	child_sa_t *child_sa;
 	child_cfg_t *child_cfg;
 	protocol_id_t protocol;
-	uint32_t spi, reqid, rekey_spi;
+	uint32_t spi, reqid;
 	action_t action;
 	status_t status = SUCCESS;
 	time_t now, expire;
@@ -324,6 +331,7 @@ static status_t destroy_and_reestablish(private_child_delete_t *this)
 	while (enumerator->enumerate(enumerator, (void**)&entry))
 	{
 		child_sa = entry->child_sa;
+		child_sa->set_state(child_sa, CHILD_DELETED);
 		/* signal child down event if we weren't rekeying */
 		protocol = child_sa->get_protocol(child_sa);
 		if (!entry->rekeyed)
@@ -332,11 +340,7 @@ static status_t destroy_and_reestablish(private_child_delete_t *this)
 		}
 		else
 		{
-			rekey_spi = child_sa->get_rekey_spi(child_sa);
-			if (rekey_spi)
-			{
-				install_outbound(this, protocol, rekey_spi);
-			}
+			install_outbound(this, protocol, child_sa->get_rekey_spi(child_sa));
 			/* for rekeyed CHILD_SAs we uninstall the outbound SA but don't
 			 * immediately destroy it, by default, so we can process delayed
 			 * packets */
@@ -374,8 +378,8 @@ static status_t destroy_and_reestablish(private_child_delete_t *this)
 					break;
 				case ACTION_ROUTE:
 					charon->traps->install(charon->traps,
-							this->ike_sa->get_peer_cfg(this->ike_sa), child_cfg,
-							reqid);
+									this->ike_sa->get_peer_cfg(this->ike_sa),
+									child_cfg);
 					break;
 				default:
 					break;
@@ -456,7 +460,18 @@ METHOD(task_t, build_i, status_t,
 		this->spi = child_sa->get_spi(child_sa, TRUE);
 	}
 
-	if (child_sa->get_state(child_sa) == CHILD_DELETING)
+	if (this->expired && child_sa->get_state(child_sa) == CHILD_REKEYED)
+	{	/* the peer was expected to delete this SA, but if we send a DELETE
+		 * we might cause a collision there if the CREATE_CHILD_SA response
+		 * is delayed (the peer wouldn't know if we deleted this SA due to an
+		 * expire or because of a forced delete by the user and might then
+		 * ignore the CREATE_CHILD_SA response once it arrives) */
+		child_sa->set_state(child_sa, CHILD_DELETED);
+		install_outbound(this, this->protocol,
+						 child_sa->get_rekey_spi(child_sa));
+	}
+
+	if (child_sa->get_state(child_sa) == CHILD_DELETED)
 	{	/* DELETEs for this CHILD_SA were already exchanged, but it was not yet
 		 * destroyed to allow delayed packets to get processed */
 		this->ike_sa->destroy_child_sa(this->ike_sa, this->protocol, this->spi);

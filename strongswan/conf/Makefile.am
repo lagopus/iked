@@ -39,6 +39,7 @@ plugins = \
 	plugins/curl.opt \
 	plugins/dhcp.opt \
 	plugins/dnscert.opt \
+	plugins/drbg.opt \
 	plugins/duplicheck.opt \
 	plugins/eap-aka.opt \
 	plugins/eap-aka-3gpp.opt \
@@ -61,13 +62,11 @@ plugins = \
 	plugins/imc-hcd.opt \
 	plugins/imc-os.opt \
 	plugins/imc-scanner.opt \
-	plugins/imc-swid.opt \
 	plugins/imc-swima.opt \
 	plugins/imc-test.opt \
 	plugins/imv-attestation.opt \
 	plugins/imv-os.opt \
 	plugins/imv-scanner.opt \
-	plugins/imv-swid.opt \
 	plugins/imv-swima.opt \
 	plugins/imv-test.opt \
 	plugins/ipseckey.opt \
@@ -104,6 +103,7 @@ plugins = \
 	plugins/updown.opt \
 	plugins/vici.opt \
 	plugins/whitelist.opt \
+	plugins/wolfssl.opt \
 	plugins/xauth-eap.opt \
 	plugins/xauth-pam.opt
 
@@ -176,7 +176,7 @@ install-data-local: $(plugins_install_src)
 	test -e "$(DESTDIR)${strongswanconfdir}" || $(INSTALL) -d "$(DESTDIR)$(strongswanconfdir)" || true
 	test -e "$(DESTDIR)${strongswanddir}" || $(INSTALL) -d "$(DESTDIR)$(strongswanddir)" || true
 	test -e "$(DESTDIR)${charonconfdir}" || $(INSTALL) -d "$(DESTDIR)$(charonconfdir)" || true
-	test -e "$(DESTDIR)$(strongswanconfdir)/strongswan.conf" || $(INSTALL) -m 644 $(srcdir)/strongswan.conf $(DESTDIR)$(strongswanconfdir)/strongswan.conf || true
+	test -e "$(DESTDIR)$(strongswan_conf)" || $(INSTALL) -m 644 $(srcdir)/strongswan.conf $(DESTDIR)$(strongswan_conf) || true
 	for f in $(options_install_src); do \
 		name=`basename $$f`; \
 		test -f "$(DESTDIR)$(strongswanddir)/$$name" || $(INSTALL) -m 644 "$(srcdir)/$$f" "$(DESTDIR)$(strongswanddir)/$$name" || true; \

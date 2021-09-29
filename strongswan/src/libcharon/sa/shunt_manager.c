@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 Tobias Brunner
+ * Copyright (C) 2015-2017 Tobias Brunner
  * Copyright (C) 2011-2016 Andreas Steffen
  * HSR Hochschule fuer Technik Rapperswil
  *
@@ -117,8 +117,10 @@ static bool install_shunt_policy(child_cfg_t *child)
 	host_any6 = host_create_any(AF_INET6);
 
 	hosts = linked_list_create_with_items(host_any, host_any6, NULL);
-	my_ts_list =    child->get_traffic_selectors(child, TRUE,  NULL, hosts);
-	other_ts_list = child->get_traffic_selectors(child, FALSE, NULL, hosts);
+	my_ts_list =    child->get_traffic_selectors(child, TRUE,  NULL, hosts,
+												 FALSE);
+	other_ts_list = child->get_traffic_selectors(child, FALSE, NULL, hosts,
+												 FALSE);
 	hosts->destroy(hosts);
 
 	manual_prio = child->get_manual_prio(child);
@@ -198,6 +200,13 @@ METHOD(shunt_manager_t, install, bool,
 	entry_t *entry;
 	bool found = FALSE, success;
 
+	if (!ns)
+	{
+		DBG1(DBG_CFG, "missing namespace for shunt policy '%s'",
+			 cfg->get_name(cfg));
+		return FALSE;
+	}
+
 	/* check if not already installed */
 	this->lock->write_lock(this->lock);
 	if (this->installing == INSTALL_DISABLED)
@@ -224,7 +233,7 @@ METHOD(shunt_manager_t, install, bool,
 		return TRUE;
 	}
 	INIT(entry,
-		.ns = strdupnull(ns),
+		.ns = strdup(ns),
 		.cfg = cfg->get_ref(cfg),
 	);
 	this->shunts->insert_last(this->shunts, entry);
@@ -280,8 +289,10 @@ static void uninstall_shunt_policy(child_cfg_t *child)
 	host_any6 = host_create_any(AF_INET6);
 
 	hosts = linked_list_create_with_items(host_any, host_any6, NULL);
-	my_ts_list =    child->get_traffic_selectors(child, TRUE,  NULL, hosts);
-	other_ts_list = child->get_traffic_selectors(child, FALSE, NULL, hosts);
+	my_ts_list =    child->get_traffic_selectors(child, TRUE,  NULL, hosts,
+												 FALSE);
+	other_ts_list = child->get_traffic_selectors(child, FALSE, NULL, hosts,
+												 FALSE);
 	hosts->destroy(hosts);
 
 	manual_prio = child->get_manual_prio(child);
@@ -369,7 +380,7 @@ METHOD(shunt_manager_t, uninstall, bool,
 	enumerator = this->shunts->create_enumerator(this->shunts);
 	while (enumerator->enumerate(enumerator, &entry))
 	{
-		if (streq(ns, entry->ns) &&
+		if ((!ns || streq(ns, entry->ns)) &&
 			streq(name, entry->cfg->get_name(entry->cfg)))
 		{
 			this->shunts->remove_at(this->shunts, enumerator);

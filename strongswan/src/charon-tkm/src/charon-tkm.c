@@ -43,7 +43,6 @@
 #include "tkm_public_key.h"
 #include "tkm_cred.h"
 #include "tkm_encoder.h"
-#include "tkm_spi_generator.h"
 
 /**
  * TKM bus listener for IKE authorize events.
@@ -134,6 +133,7 @@ static void run()
 	}
 }
 
+#ifndef DISABLE_SIGNAL_HANDLER
 /**
  * Handle SIGSEGV/SIGILL signals raised by threads
  */
@@ -149,6 +149,7 @@ static void segv_handler(int signal)
 	DBG1(DBG_DMN, "killing ourself, received critical signal");
 	abort();
 }
+#endif /* DISABLE_SIGNAL_HANDLER */
 
 /**
  * Lookup UID and GID
@@ -193,7 +194,7 @@ static bool check_pidfile()
 			}
 			fclose(pidfile);
 			pidfile = NULL;
-			if (pid && kill(pid, 0) == 0)
+			if (pid && pid != getpid() && kill(pid, 0) == 0)
 			{
 				DBG1(DBG_DMN, "%s already running ('%s' exists)", dmn_name,
 					 pidfile_name);
@@ -316,9 +317,6 @@ int main(int argc, char *argv[])
 			PLUGIN_PROVIDE(PUBKEY_VERIFY, SIGN_RSA_EMSA_PKCS1_SHA2_256),
 		PLUGIN_CALLBACK(kernel_ipsec_register, tkm_kernel_ipsec_create),
 			PLUGIN_PROVIDE(CUSTOM, "kernel-ipsec"),
-		PLUGIN_CALLBACK(tkm_spi_generator_register, NULL),
-			PLUGIN_PROVIDE(CUSTOM, "tkm-spi-generator"),
-				PLUGIN_DEPENDS(CUSTOM, "libcharon-sa-managers"),
 	};
 	lib->plugins->add_static_features(lib->plugins, "tkm-backend", features,
 			countof(features), TRUE, NULL, NULL);
@@ -376,16 +374,21 @@ int main(int argc, char *argv[])
 	/* register TKM credential encoder */
 	lib->encoding->add_encoder(lib->encoding, tkm_encoder_encode);
 
-	/* add handler for SEGV and ILL,
+	/* add handler for fatal signals,
 	 * INT and TERM are handled by sigwaitinfo() in run() */
-	action.sa_handler = segv_handler;
 	action.sa_flags = 0;
 	sigemptyset(&action.sa_mask);
 	sigaddset(&action.sa_mask, SIGINT);
 	sigaddset(&action.sa_mask, SIGTERM);
+
+	/* optionally let the external system handle fatal signals */
+#ifndef DISABLE_SIGNAL_HANDLER
+	action.sa_handler = segv_handler;
 	sigaction(SIGSEGV, &action, NULL);
 	sigaction(SIGILL, &action, NULL);
 	sigaction(SIGBUS, &action, NULL);
+#endif /* DISABLE_SIGNAL_HANDLER */
+
 	action.sa_handler = SIG_IGN;
 	sigaction(SIGPIPE, &action, NULL);
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2016 Andreas Steffen
- * Copyright (C) 2006-2016 Tobias Brunner
+ * Copyright (C) 2006-2018 Tobias Brunner
  * Copyright (C) 2006 Daniel Roethlisberger
  * Copyright (C) 2005-2006 Martin Willi
  * Copyright (C) 2005 Jan Hutter
@@ -55,6 +55,8 @@ struct kernel_ipsec_sa_id_t {
 	uint8_t proto;
 	/** Optional mark */
 	mark_t mark;
+	/** Optional interface ID */
+	uint32_t if_id;
 };
 
 /**
@@ -91,10 +93,18 @@ struct kernel_ipsec_add_sa_t {
 	uint16_t cpi;
 	/** TRUE to enable UDP encapsulation for NAT traversal */
 	bool encap;
-	/** TRUE to enable hardware offloading if available */
-	bool hw_offload;
+	/** no (disabled), yes (enabled), auto (enabled if supported) */
+	hw_offload_t hw_offload;
+	/** Mark the SA should apply to packets after processing */
+	mark_t mark;
 	/** TRUE to use Extended Sequence Numbers */
 	bool esn;
+	/** TRUE to copy the DF bit to the outer IPv4 header in tunnel mode */
+	bool copy_df;
+	/** TRUE to copy the ECN header field to/from the outer header */
+	bool copy_ecn;
+	/** Whether to copy the DSCP header field to/from the outer header */
+	dscp_copy_t copy_dscp;
 	/** TRUE if initiator of the exchange creating the SA */
 	bool initiator;
 	/** TRUE if this is an inbound SA */
@@ -146,6 +156,8 @@ struct kernel_ipsec_policy_id_t {
 	traffic_selector_t *dst_ts;
 	/** Optional mark */
 	mark_t mark;
+	/** Optional interface ID */
+	uint32_t if_id;
 	/** Network interface restricting policy */
 	char *interface;
 };

@@ -1,6 +1,7 @@
 /*
+ * Copyright (C) 2019 Tobias Brunner
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,6 +35,13 @@ struct ocsp_request_t {
 	 * Implements certificate_t interface
 	 */
 	certificate_t interface;
+
+	/**
+	 * Get the nonce sent in this OCSP request.
+	 *
+	 * @return					nonce in the request (internal data)
+	 */
+	chunk_t (*get_nonce)(ocsp_request_t *this);
 };
 
 #endif /** OCSP_REQUEST_H_ @}*/

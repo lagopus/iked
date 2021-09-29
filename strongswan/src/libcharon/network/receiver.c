@@ -2,7 +2,7 @@
  * Copyright (C) 2008-2012 Tobias Brunner
  * Copyright (C) 2005-2006 Martin Willi
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -176,8 +176,8 @@ static void send_notify(message_t *request, int major, exchange_type_t exchange,
 	if (major == IKEV2_MAJOR_VERSION)
 	{
 		response->set_request(response, FALSE);
+		response->set_message_id(response, request->get_message_id(request));
 	}
-	response->set_message_id(response, 0);
 	ike_sa_id = request->get_ike_sa_id(request);
 	ike_sa_id->switch_initiator(ike_sa_id);
 	response->set_ike_sa_id(response, ike_sa_id);
@@ -520,7 +520,8 @@ static job_requeue_t receive_packets(private_receiver_t *this)
 			break;
 		default:
 #ifdef USE_IKEV2
-			send_notify(message, IKEV2_MAJOR_VERSION, INFORMATIONAL,
+			send_notify(message, IKEV2_MAJOR_VERSION,
+						message->get_exchange_type(message),
 						INVALID_MAJOR_VERSION, chunk_empty);
 #elif defined(USE_IKEV1)
 			send_notify(message, IKEV1_MAJOR_VERSION, INFORMATIONAL_V1,
@@ -646,13 +647,13 @@ receiver_t *receiver_create()
 	this->receive_delay = lib->settings->get_int(lib->settings,
 					"%s.receive_delay", 0, lib->ns);
 	this->receive_delay_type = lib->settings->get_int(lib->settings,
-					"%s.receive_delay_type", 0, lib->ns),
+					"%s.receive_delay_type", 0, lib->ns);
 	this->receive_delay_request = lib->settings->get_bool(lib->settings,
-					"%s.receive_delay_request", TRUE, lib->ns),
+					"%s.receive_delay_request", TRUE, lib->ns);
 	this->receive_delay_response = lib->settings->get_bool(lib->settings,
-					"%s.receive_delay_response", TRUE, lib->ns),
+					"%s.receive_delay_response", TRUE, lib->ns);
 	this->initiator_only = lib->settings->get_bool(lib->settings,
-					"%s.initiator_only", FALSE, lib->ns),
+					"%s.initiator_only", FALSE, lib->ns);
 
 	this->hasher = lib->crypto->create_hasher(lib->crypto, HASH_SHA1);
 	if (!this->hasher)

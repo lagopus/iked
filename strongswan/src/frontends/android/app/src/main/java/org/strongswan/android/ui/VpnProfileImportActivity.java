@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2017 Tobias Brunner
+ * Copyright (C) 2016-2019 Tobias Brunner
  * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -16,22 +16,16 @@
 package org.strongswan.android.ui;
 
 import android.app.Activity;
-import android.app.LoaderManager;
-import android.app.ProgressDialog;
-import android.content.AsyncTaskLoader;
+import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.Loader;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.security.KeyChain;
 import android.security.KeyChainAliasCallback;
 import android.security.KeyChainException;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.util.Base64;
 import android.view.Menu;
@@ -66,7 +60,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.OutOfMemoryError;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.security.KeyStore;
@@ -76,9 +69,16 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.UUID;
 
 import javax.net.ssl.SSLHandshakeException;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.AsyncTaskLoader;
+import androidx.loader.content.Loader;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 public class VpnProfileImportActivity extends AppCompatActivity
 {
@@ -96,7 +96,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 	private TrustedCertificateEntry mUserCertEntry;
 	private String mUserCertLoading;
 	private boolean mHideImport;
-	private ProgressDialog mProgress;
+	private androidx.core.widget.ContentLoadingProgressBar mProgressBar;
 	private TextView mExistsWarning;
 	private ViewGroup mBasicDataGroup;
 	private TextView mName;
@@ -167,6 +167,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 
 		setContentView(R.layout.profile_import_view);
 
+		mProgressBar = findViewById(R.id.progress_bar);
 		mExistsWarning = (TextView)findViewById(R.id.exists_warning);
 		mBasicDataGroup = (ViewGroup)findViewById(R.id.basic_data_group);
 		mName = (TextView)findViewById(R.id.name);
@@ -213,7 +214,15 @@ public class VpnProfileImportActivity extends AppCompatActivity
 		{
 			Intent openIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
 			openIntent.setType("*/*");
-			startActivityForResult(openIntent, OPEN_DOCUMENT);
+			try
+			{
+				startActivityForResult(openIntent, OPEN_DOCUMENT);
+			}
+			catch (ActivityNotFoundException e)
+			{	/* some devices are unable to browse for files */
+				finish();
+				return;
+			}
 		}
 
 		if (savedInstanceState != null)
@@ -221,7 +230,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 			mUserCertLoading = savedInstanceState.getString(VpnProfileDataSource.KEY_USER_CERTIFICATE);
 			if (mUserCertLoading != null)
 			{
-				getLoaderManager().initLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
+				LoaderManager.getInstance(this).initLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
 			}
 			mImportUserCert.setEnabled(!savedInstanceState.getBoolean(PKCS12_INSTALLED));
 		}
@@ -300,23 +309,16 @@ public class VpnProfileImportActivity extends AppCompatActivity
 
 	private void loadProfile(Uri uri)
 	{
-		mProgress = ProgressDialog.show(this, null, getString(R.string.loading),
-				true, true, new DialogInterface.OnCancelListener() {
-					@Override
-					public void onCancel(DialogInterface dialog)
-					{
-						finish();
-					}
-				});
+		mProgressBar.show();
 
 		Bundle args = new Bundle();
 		args.putParcelable(PROFILE_URI, uri);
-		getLoaderManager().initLoader(PROFILE_LOADER, args, mProfileLoaderCallbacks);
+		LoaderManager.getInstance(this).initLoader(PROFILE_LOADER, args, mProfileLoaderCallbacks);
 	}
 
 	public void handleProfile(ProfileLoadResult data)
 	{
-		mProgress.dismiss();
+		mProgressBar.hide();
 
 		mProfile = null;
 		if (data != null && data.ThrownException == null)
@@ -399,7 +401,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 			if (mUserCertLoading == null)
 			{
 				mUserCertLoading = getString(R.string.profile_cert_alias, mProfile.getName());
-				getLoaderManager().initLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
+				LoaderManager.getInstance(this).initLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
 			}
 			updateUserCertView();
 		}
@@ -478,14 +480,33 @@ public class VpnProfileImportActivity extends AppCompatActivity
 		profile.setRemoteId(remote.optString("id", null));
 		profile.Certificate = decodeBase64(remote.optString("cert", null));
 
-		if (remote.optBoolean("certreq", false))
+		if (!remote.optBoolean("certreq", true))
 		{
 			flags |= VpnProfile.FLAGS_SUPPRESS_CERT_REQS;
+		}
+
+		JSONObject revocation = remote.optJSONObject("revocation");
+		if (revocation != null)
+		{
+			if (!revocation.optBoolean("crl", true))
+			{
+				flags |= VpnProfile.FLAGS_DISABLE_CRL;
+			}
+			if (!revocation.optBoolean("ocsp", true))
+			{
+				flags |= VpnProfile.FLAGS_DISABLE_OCSP;
+			}
+			if (revocation.optBoolean("strict", false))
+			{
+				flags |= VpnProfile.FLAGS_STRICT_REVOCATION;
+			}
 		}
 
 		JSONObject local = obj.optJSONObject("local");
 		if (local != null)
 		{
+			profile.setLocalId(local.optString("id", null));
+
 			if (type.has(VpnTypeFeature.USER_PASS))
 			{
 				profile.setUsername(local.optString("eap_id", null));
@@ -493,13 +514,18 @@ public class VpnProfileImportActivity extends AppCompatActivity
 
 			if (type.has(VpnTypeFeature.CERTIFICATE))
 			{
-				profile.setLocalId(local.optString("id", null));
 				profile.PKCS12 = decodeBase64(local.optString("p12", null));
+
+				if (local.optBoolean("rsa-pss", false))
+				{
+					flags |= VpnProfile.FLAGS_RSA_PSS;
+				}
 			}
 		}
 
 		profile.setIkeProposal(getProposal(obj, "ike-proposal", true));
 		profile.setEspProposal(getProposal(obj, "esp-proposal", false));
+		profile.setDnsServers(getAddressList(obj, "dns-servers"));
 		profile.setMTU(getInteger(obj, "mtu", Constants.MTU_MIN, Constants.MTU_MAX));
 		profile.setNATKeepAlive(getInteger(obj, "nat-keepalive", Constants.NAT_KEEPALIVE_MIN, Constants.NAT_KEEPALIVE_MAX));
 		JSONObject split = obj.optJSONObject("split-tunneling");
@@ -579,6 +605,44 @@ public class VpnProfileImportActivity extends AppCompatActivity
 												  "split-tunneling." + key));
 			}
 			return ranges.toString();
+		}
+		return null;
+	}
+
+	private String getAddressList(JSONObject obj, String key) throws JSONException
+	{
+		ArrayList<String> addrs = new ArrayList<>();
+		JSONArray arr = obj.optJSONArray(key);
+		if (arr != null)
+		{
+			for (int i = 0; i < arr.length(); i++)
+			{
+				String addr = arr.getString(i).replace(" ", "");
+				addrs.add(addr);
+			}
+		}
+		else
+		{
+			String value = obj.optString(key, null);
+			if (!TextUtils.isEmpty(value))
+			{
+				Collections.addAll(addrs, value.split("\\s+"));
+			}
+		}
+		if (addrs.size() > 0)
+		{
+			for (String addr : addrs)
+			{
+				try
+				{
+					Utils.parseInetAddress(addr);
+				}
+				catch (UnknownHostException e)
+				{
+					throw new JSONException(getString(R.string.profile_import_failed_value, key));
+				}
+			}
+			return TextUtils.join(" ", addrs);
 		}
 		return null;
 	}
@@ -825,7 +889,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 			{
 				alias = getString(R.string.profile_cert_alias, mProfile.getName());
 			}
-			KeyChain.choosePrivateKeyAlias(VpnProfileImportActivity.this, this, new String[] { "RSA" }, null, null, -1, alias);
+			KeyChain.choosePrivateKeyAlias(VpnProfileImportActivity.this, this, null, null, null, -1, alias);
 		}
 
 		@Override
@@ -840,7 +904,7 @@ public class VpnProfileImportActivity extends AppCompatActivity
 					updateUserCertView();
 					if (alias != null)
 					{	/* otherwise the dialog was canceled, the request denied */
-						getLoaderManager().restartLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
+						LoaderManager.getInstance(VpnProfileImportActivity.this).restartLoader(USER_CERT_LOADER, null, mUserCertificateLoaderCallbacks);
 					}
 				}
 			});

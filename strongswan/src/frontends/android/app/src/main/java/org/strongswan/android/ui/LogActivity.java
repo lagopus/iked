@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2012 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -18,7 +18,6 @@ package org.strongswan.android.ui;
 import android.content.Intent;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
@@ -28,6 +27,8 @@ import org.strongswan.android.data.LogContentProvider;
 import org.strongswan.android.logic.CharonVpnService;
 
 import java.io.File;
+
+import androidx.appcompat.app.AppCompatActivity;
 
 public class LogActivity extends AppCompatActivity
 {

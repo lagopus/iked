@@ -2,7 +2,7 @@
  * Copyright (C) 2005-2011 Martin Willi
  * Copyright (C) 2011 revosec AG
  *
- * Copyright (C) 2008-2017 Tobias Brunner
+ * Copyright (C) 2008-2018 Tobias Brunner
  * Copyright (C) 2005 Jan Hutter
  * HSR Hochschule fuer Technik Rapperswil
  *
@@ -412,6 +412,16 @@ struct private_ike_sa_manager_t {
 	 * Lock to access the RNG instance and the callback
 	 */
 	rwlock_t *spi_lock;
+
+	/**
+	 * Mask applied to local SPIs before mixing in the label
+	 */
+	uint64_t spi_mask;
+
+	/**
+	 * Label applied to local SPIs
+	 */
+	uint64_t spi_label;
 
 	/**
 	 * reuse existing IKE_SAs in checkout_by_config
@@ -1010,6 +1020,11 @@ static uint64_t get_spi(private_ike_sa_manager_t *this)
 		spi = 0;
 	}
 	this->spi_lock->unlock(this->spi_lock);
+
+	if (spi)
+	{
+		spi = (spi & ~this->spi_mask) | this->spi_label;
+	}
 	return spi;
 }
 
@@ -1620,17 +1635,6 @@ METHOD(ike_sa_manager_t, new_initiator_spi, bool,
 			unlock_single_segment(this, segment);
 			return FALSE;
 		}
-		/* threads waiting for this entry do so using the (soon) wrong IKE_SA
-		 * ID and, therefore, likely on the wrong segment, so drive them out */
-		entry->driveout_waiting_threads = TRUE;
-		entry->driveout_new_threads = TRUE;
-		while (entry->waiting_threads)
-		{
-			entry->condvar->broadcast(entry->condvar);
-			entry->condvar->wait(entry->condvar, this->segments[segment].mutex);
-		}
-		remove_entry(this, entry);
-		unlock_single_segment(this, segment);
 	}
 	else
 	{
@@ -1638,7 +1642,19 @@ METHOD(ike_sa_manager_t, new_initiator_spi, bool,
 		return FALSE;
 	}
 
+	/* the hashtable row and segment are determined by the local SPI as
+	 * initiator, so if we change it the row and segment derived from it might
+	 * change as well.  This could be a problem for threads waiting for the
+	 * entry (in particular those enumerating entries to check them out by
+	 * unique ID or name).  In order to avoid having to drive them out and thus
+	 * preventing them from checking out the entry (even though the ID or name
+	 * will not change and enumerating it is also fine), we mask the new SPI and
+	 * merge it with the old SPI so the entry ends up in the same row/segment.
+	 * Since SPIs are 64-bit and the number of rows/segments is usually
+	 * relatively low this should not be a problem. */
 	spi = ike_sa_id->get_initiator_spi(ike_sa_id);
+	new_spi = (spi & (uint64_t)this->table_mask) |
+			  (new_spi & ~(uint64_t)this->table_mask);
 
 	DBG2(DBG_MGR, "change initiator SPI of IKE_SA %s[%u] from %.16"PRIx64" to "
 		 "%.16"PRIx64, ike_sa->get_name(ike_sa), ike_sa->get_unique_id(ike_sa),
@@ -1647,10 +1663,7 @@ METHOD(ike_sa_manager_t, new_initiator_spi, bool,
 	ike_sa_id->set_initiator_spi(ike_sa_id, new_spi);
 	entry->ike_sa_id->replace_values(entry->ike_sa_id, ike_sa_id);
 
-	entry->driveout_waiting_threads = FALSE;
-	entry->driveout_new_threads = FALSE;
-
-	segment = put_entry(this, entry);
+	entry->condvar->signal(entry->condvar);
 	unlock_single_segment(this, segment);
 	return TRUE;
 }
@@ -1969,6 +1982,8 @@ static void adopt_children_and_vips(ike_sa_t *old, ike_sa_t *new)
 	}
 	enumerator->destroy(enumerator);
 
+	new->adopt_child_tasks(new, old);
+
 	enumerator = old->create_virtual_ip_enumerator(old, FALSE);
 	while (enumerator->enumerate(enumerator, &vip))
 	{
@@ -2017,11 +2032,13 @@ static status_t enforce_replace(private_ike_sa_manager_t *this,
 		 * CHILD_SAs to keep connectivity up. */
 		lib->scheduler->schedule_job(lib->scheduler, (job_t*)
 			delete_ike_sa_job_create(duplicate->get_id(duplicate), TRUE), 10);
+		DBG1(DBG_IKE, "schedule delete of duplicate IKE_SA for peer '%Y' due "
+			 "to uniqueness policy and suspected reauthentication", other);
 		return SUCCESS;
 	}
 	DBG1(DBG_IKE, "deleting duplicate IKE_SA for peer '%Y' due to "
 		 "uniqueness policy", other);
-	return duplicate->delete(duplicate);
+	return duplicate->delete(duplicate, FALSE);
 }
 
 METHOD(ike_sa_manager_t, check_uniqueness, bool,
@@ -2266,20 +2283,7 @@ METHOD(ike_sa_manager_t, flush, void,
 	while (enumerator->enumerate(enumerator, &entry, &segment))
 	{
 		charon->bus->set_sa(charon->bus, entry->ike_sa);
-		if (entry->ike_sa->get_version(entry->ike_sa) == IKEV2)
-		{	/* as the delete never gets processed, fire down events */
-			switch (entry->ike_sa->get_state(entry->ike_sa))
-			{
-				case IKE_ESTABLISHED:
-				case IKE_REKEYING:
-				case IKE_DELETING:
-					charon->bus->ike_updown(charon->bus, entry->ike_sa, FALSE);
-					break;
-				default:
-					break;
-			}
-		}
-		entry->ike_sa->delete(entry->ike_sa);
+		entry->ike_sa->delete(entry->ike_sa, TRUE);
 	}
 	enumerator->destroy(enumerator);
 
@@ -2350,6 +2354,7 @@ static u_int get_nearest_powerof2(u_int n)
 ike_sa_manager_t *ike_sa_manager_create()
 {
 	private_ike_sa_manager_t *this;
+	char *spi_val;
 	u_int i;
 
 	INIT(this,
@@ -2383,6 +2388,20 @@ ike_sa_manager_t *ike_sa_manager_create()
 		return NULL;
 	}
 	this->spi_lock = rwlock_create(RWLOCK_TYPE_DEFAULT);
+	spi_val = lib->settings->get_str(lib->settings, "%s.spi_mask", NULL,
+									 lib->ns);
+	this->spi_mask = settings_value_as_uint64(spi_val, 0);
+	spi_val = lib->settings->get_str(lib->settings, "%s.spi_label", NULL,
+									 lib->ns);
+	this->spi_label = settings_value_as_uint64(spi_val, 0);
+	if (this->spi_mask || this->spi_label)
+	{
+		DBG1(DBG_IKE, "using SPI label 0x%.16"PRIx64" and mask 0x%.16"PRIx64,
+			 this->spi_label, this->spi_mask);
+		/* the allocated SPI is assumed to be in network order */
+		this->spi_mask = htobe64(this->spi_mask);
+		this->spi_label = htobe64(this->spi_label);
+	}
 
 	this->ikesa_limit = lib->settings->get_int(lib->settings,
 											   "%s.ikesa_limit", 0, lib->ns);

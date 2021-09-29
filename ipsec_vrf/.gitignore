@@ -1,0 +1,6 @@
+# Auto generated files
+lib/vars
+systemd/strongswan@.service
+
+# backup files
+*~

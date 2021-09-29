@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -198,7 +198,9 @@ gcrypt_crypter_t *gcrypt_crypter_create(encryption_algorithm_t algo,
 			gcrypt_alg = GCRY_CIPHER_BLOWFISH;
 			break;
 		case ENCR_AES_CTR:
-			mode = GCRY_CIPHER_MODE_CTR;
+		case ENCR_AES_ECB:
+			mode = (algo == ENCR_AES_CTR) ? GCRY_CIPHER_MODE_CTR :
+											GCRY_CIPHER_MODE_ECB;
 			/* fall */
 		case ENCR_AES_CBC:
 			switch (key_size)

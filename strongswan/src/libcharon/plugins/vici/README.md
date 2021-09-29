@@ -75,7 +75,7 @@ for example.
 
 The defined packet types optionally wrap a message with additional data.
 Messages are currently used in CMD_REQUEST/CMD_RESPONSE, and in EVENT packets.
-A message uses a hierarchial tree of sections. Each section (or the implicit
+A message uses a hierarchical tree of sections. Each section (or the implicit
 root section) contains an arbitrary set of key/value pairs, lists and
 sub-sections. The length of a message is not part of the message itself, but
 the wrapping layer, usually calculated from the transport byte sequence length.
@@ -140,7 +140,7 @@ Consider the following structure using pseudo-markup for this example:
 		list1 = [ item1, item2 ]
 	}
 
-The example above reprensents a valid tree structure, that gets encoded as
+The example above represents a valid tree structure, that gets encoded as
 the following C array:
 
 	char msg[] = {
@@ -258,7 +258,7 @@ Initiates an SA while streaming _control-log_ events.
 
 	{
 		child = <CHILD_SA configuration name to initiate>
-		ike = <optional IKE_SA configuration name to find child under>
+		ike = <IKE_SA configuration name to initiate or to find child under>
 		timeout = <timeout in ms before returning>
 		init-limits = <whether limits may prevent initiating the CHILD_SA>
 		loglevel = <loglevel to issue "control-log" events for>
@@ -279,7 +279,9 @@ Terminates an SA while streaming _control-log_ events.
 		ike = <terminate an IKE_SA by configuration name>
 		child-id = <terminate a CHILD_SA by its reqid>
 		ike-id = <terminate an IKE_SA by its unique id>
-		timeout = <timeout in ms before returning>
+		force = <terminate IKE_SA without waiting for proper DELETE, if timeout
+				 is given, waits for a response until it is reached>
+		timeout = <timeout in ms before returning, see below>
 		loglevel = <loglevel to issue "control-log" events for>
 	} => {
 		success = <yes or no>
@@ -300,6 +302,7 @@ Initiate the rekeying of an SA.
 		ike = <rekey an IKE_SA by configuration name>
 		child-id = <rekey a CHILD_SA by its reqid>
 		ike-id = <rekey an IKE_SA by its unique id>
+		reauth = <reauthenticate instead of rekey an IKEv2 SA>
 	} => {
 		success = <yes or no>
 		matches = <number of matched SAs>
@@ -445,10 +448,10 @@ with the same name gets updated or replaced.
 		<IKE_SA config name> = {
 			# IKE configuration parameters with authentication and CHILD_SA
 			# subsections. Refer to swanctl.conf(5) for details.
-		} => {
-			success = <yes or no>
-			errmsg = <error string on failure>
 		}
+	} => {
+		success = <yes or no>
+		errmsg = <error string on failure>
 	}
 
 ### unload-conn() ###
@@ -600,10 +603,10 @@ authority with the same name gets replaced.
 		<certification authority name> = {
 			# certification authority parameters
 			# refer to swanctl.conf(5) for details.
-		} => {
-			success = <yes or no>
-			errmsg = <error string on failure>
 		}
+	} => {
+		success = <yes or no>
+		errmsg = <error string on failure>
 	}
 
 ### unload-authority() ###
@@ -769,6 +772,8 @@ command.
 			nat-remote = <yes, if remote endpoint is behind a NAT>
 			nat-fake = <yes, if NAT situation has been faked as responder>
 			nat-any = <yes, if any endpoint is behind a NAT (also if faked)>
+			if-id-in = <hex encoded default inbound XFRM interface ID>
+			if-id-out = <hex encoded default outbound XFRM interface ID>
 			encr-alg = <IKE encryption algorithm string>
 			encr-keysize = <key size for encr-alg, if applicable>
 			integ-alg = <IKE integrity algorithm string>
@@ -810,6 +815,8 @@ command.
 					mark-mask-in = <hex encoded inbound Netfilter mark mask>
 					mark-out = <hex encoded outbound Netfilter mark value>
 					mark-mask-out = <hex encoded outbound Netfilter mark mask>
+					if-id-in = <hex encoded inbound XFRM interface ID>
+					if-id-out = <hex encoded outbound XFRM interface ID>
 					encr-alg = <ESP encryption algorithm name, if any>
 					encr-keysize = <ESP encryption key size, if applicable>
 					integ-alg = <ESP or AH integrity algorithm name, if any>

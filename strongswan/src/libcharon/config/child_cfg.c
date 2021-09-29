@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2017 Tobias Brunner
+ * Copyright (C) 2008-2019 Tobias Brunner
  * Copyright (C) 2016 Andreas Steffen
  * Copyright (C) 2005-2007 Martin Willi
  * Copyright (C) 2005 Jan Hutter
@@ -114,6 +114,16 @@ struct private_child_cfg_t {
 	uint32_t reqid;
 
 	/**
+	 * Optionl interface ID to use for inbound CHILD_SA
+	 */
+	uint32_t if_id_in;
+
+	/**
+	 * Optionl interface ID to use for outbound CHILD_SA
+	 */
+	uint32_t if_id_out;
+
+	/**
 	 * Optional mark to install inbound CHILD_SA with
 	 */
 	mark_t mark_in;
@@ -122,6 +132,16 @@ struct private_child_cfg_t {
 	 * Optional mark to install outbound CHILD_SA with
 	 */
 	mark_t mark_out;
+
+	/**
+	 * Optional mark to set to packets after inbound processing
+	 */
+	mark_t set_mark_in;
+
+	/**
+	 * Optional mark to set to packets after outbound processing
+	 */
+	mark_t set_mark_out;
 
 	/**
 	 * Traffic Flow Confidentiality padding, if enabled
@@ -142,6 +162,16 @@ struct private_child_cfg_t {
 	 * anti-replay window size
 	 */
 	uint32_t replay_window;
+
+	/**
+	 * HW offload mode
+	 */
+	hw_offload_t hw_offload;
+
+	/**
+	 * DS header field copy mode
+	 */
+	dscp_copy_t copy_dscp;
 };
 
 METHOD(child_cfg_t, get_name, char*,
@@ -179,16 +209,18 @@ METHOD(child_cfg_t, get_proposals, linked_list_t*,
 {
 	enumerator_t *enumerator;
 	proposal_t *current;
+	proposal_selection_flag_t flags = 0;
 	linked_list_t *proposals = linked_list_create();
+
+	if (strip_dh)
+	{
+		flags |= PROPOSAL_SKIP_DH;
+	}
 
 	enumerator = this->proposals->create_enumerator(this->proposals);
 	while (enumerator->enumerate(enumerator, &current))
 	{
-		current = current->clone(current);
-		if (strip_dh)
-		{
-			current->strip_dh(current, MODP_NONE);
-		}
+		current = current->clone(current, flags);
 		if (proposals->find_first(proposals, match_proposal, NULL, current))
 		{
 			current->destroy(current);
@@ -204,69 +236,10 @@ METHOD(child_cfg_t, get_proposals, linked_list_t*,
 }
 
 METHOD(child_cfg_t, select_proposal, proposal_t*,
-	private_child_cfg_t*this, linked_list_t *proposals, bool strip_dh,
-	bool private, bool prefer_self)
+	private_child_cfg_t*this, linked_list_t *proposals,
+	proposal_selection_flag_t flags)
 {
-	enumerator_t *prefer_enum, *match_enum;
-	proposal_t *proposal, *match, *selected = NULL;
-
-	if (prefer_self)
-	{
-		prefer_enum = this->proposals->create_enumerator(this->proposals);
-		match_enum = proposals->create_enumerator(proposals);
-	}
-	else
-	{
-		prefer_enum = proposals->create_enumerator(proposals);
-		match_enum = this->proposals->create_enumerator(this->proposals);
-	}
-
-	while (prefer_enum->enumerate(prefer_enum, &proposal))
-	{
-		proposal = proposal->clone(proposal);
-		if (strip_dh)
-		{
-			proposal->strip_dh(proposal, MODP_NONE);
-		}
-		if (prefer_self)
-		{
-			proposals->reset_enumerator(proposals, match_enum);
-		}
-		else
-		{
-			this->proposals->reset_enumerator(this->proposals, match_enum);
-		}
-		while (match_enum->enumerate(match_enum, &match))
-		{
-			match = match->clone(match);
-			if (strip_dh)
-			{
-				match->strip_dh(match, MODP_NONE);
-			}
-			selected = proposal->select(proposal, match, prefer_self, private);
-			match->destroy(match);
-			if (selected)
-			{
-				DBG2(DBG_CFG, "received proposals: %#P", proposals);
-				DBG2(DBG_CFG, "configured proposals: %#P", this->proposals);
-				DBG2(DBG_CFG, "selected proposal: %P", selected);
-				break;
-			}
-		}
-		proposal->destroy(proposal);
-		if (selected)
-		{
-			break;
-		}
-	}
-	prefer_enum->destroy(prefer_enum);
-	match_enum->destroy(match_enum);
-	if (!selected)
-	{
-		DBG1(DBG_CFG, "received proposals: %#P", proposals);
-		DBG1(DBG_CFG, "configured proposals: %#P", this->proposals);
-	}
-	return selected;
+	return proposal_select(this->proposals, proposals, flags);
 }
 
 METHOD(child_cfg_t, add_traffic_selector, void,
@@ -284,7 +257,7 @@ METHOD(child_cfg_t, add_traffic_selector, void,
 
 METHOD(child_cfg_t, get_traffic_selectors, linked_list_t*,
 	private_child_cfg_t *this, bool local, linked_list_t *supplied,
-	linked_list_t *hosts)
+	linked_list_t *hosts, bool log)
 {
 	enumerator_t *e1, *e2;
 	traffic_selector_t *ts1, *ts2, *selected;
@@ -329,13 +302,19 @@ METHOD(child_cfg_t, get_traffic_selectors, linked_list_t*,
 	}
 	e1->destroy(e1);
 
-	DBG2(DBG_CFG, "%s traffic selectors for %s:",
-		 supplied ? "selecting" : "proposing", local ? "us" : "other");
-	if (supplied == NULL)
+	if (log)
+	{
+		DBG2(DBG_CFG, "%s traffic selectors for %s:",
+			 supplied ? "selecting" : "proposing", local ? "us" : "other");
+	}
+	if (!supplied)
 	{
 		while (derived->remove_first(derived, (void**)&ts1) == SUCCESS)
 		{
-			DBG2(DBG_CFG, " %R", ts1);
+			if (log)
+			{
+				DBG2(DBG_CFG, " %R", ts1);
+			}
 			result->insert_last(result, ts1);
 		}
 		derived->destroy(derived);
@@ -353,11 +332,14 @@ METHOD(child_cfg_t, get_traffic_selectors, linked_list_t*,
 				selected = ts1->get_subset(ts1, ts2);
 				if (selected)
 				{
-					DBG2(DBG_CFG, " config: %R, received: %R => match: %R",
-						 ts1, ts2, selected);
+					if (log)
+					{
+						DBG2(DBG_CFG, " config: %R, received: %R => match: %R",
+							 ts1, ts2, selected);
+					}
 					result->insert_last(result, selected);
 				}
-				else
+				else if (log)
 				{
 					DBG2(DBG_CFG, " config: %R, received: %R => no match",
 						 ts1, ts2);
@@ -467,6 +449,18 @@ METHOD(child_cfg_t, get_start_action, action_t,
 	return this->start_action;
 }
 
+METHOD(child_cfg_t, get_hw_offload, hw_offload_t,
+	private_child_cfg_t *this)
+{
+	return this->hw_offload;
+}
+
+METHOD(child_cfg_t, get_copy_dscp, dscp_copy_t,
+	private_child_cfg_t *this)
+{
+	return this->copy_dscp;
+}
+
 METHOD(child_cfg_t, get_dpd_action, action_t,
 	private_child_cfg_t *this)
 {
@@ -510,10 +504,22 @@ METHOD(child_cfg_t, get_reqid, uint32_t,
 	return this->reqid;
 }
 
+METHOD(child_cfg_t, get_if_id, uint32_t,
+	private_child_cfg_t *this, bool inbound)
+{
+	return inbound ? this->if_id_in : this->if_id_out;
+}
+
 METHOD(child_cfg_t, get_mark, mark_t,
 	private_child_cfg_t *this, bool inbound)
 {
 	return inbound ? this->mark_in : this->mark_out;
+}
+
+METHOD(child_cfg_t, get_set_mark, mark_t,
+	private_child_cfg_t *this, bool inbound)
+{
+	return inbound ? this->set_mark_in : this->set_mark_out;
 }
 
 METHOD(child_cfg_t, get_tfc, uint32_t,
@@ -585,13 +591,21 @@ METHOD(child_cfg_t, equals, bool,
 		LIFETIME_EQUALS(this->lifetime, other->lifetime) &&
 		this->inactivity == other->inactivity &&
 		this->reqid == other->reqid &&
+		this->if_id_in == other->if_id_in &&
+		this->if_id_out == other->if_id_out &&
 		this->mark_in.value == other->mark_in.value &&
 		this->mark_in.mask == other->mark_in.mask &&
 		this->mark_out.value == other->mark_out.value &&
 		this->mark_out.mask == other->mark_out.mask &&
+		this->set_mark_in.value == other->set_mark_in.value &&
+		this->set_mark_in.mask == other->set_mark_in.mask &&
+		this->set_mark_out.value == other->set_mark_out.value &&
+		this->set_mark_out.mask == other->set_mark_out.mask &&
 		this->tfc == other->tfc &&
 		this->manual_prio == other->manual_prio &&
 		this->replay_window == other->replay_window &&
+		this->hw_offload == other->hw_offload &&
+		this->copy_dscp == other->copy_dscp &&
 		streq(this->updown, other->updown) &&
 		streq(this->interface, other->interface);
 }
@@ -642,7 +656,9 @@ child_cfg_t *child_cfg_create(char *name, child_cfg_create_t *data)
 			.get_dh_group = _get_dh_group,
 			.get_inactivity = _get_inactivity,
 			.get_reqid = _get_reqid,
+			.get_if_id = _get_if_id,
 			.get_mark = _get_mark,
+			.get_set_mark = _get_set_mark,
 			.get_tfc = _get_tfc,
 			.get_manual_prio = _get_manual_prio,
 			.get_interface = _get_interface,
@@ -652,17 +668,23 @@ child_cfg_t *child_cfg_create(char *name, child_cfg_create_t *data)
 			.equals = _equals,
 			.get_ref = _get_ref,
 			.destroy = _destroy,
+			.get_hw_offload = _get_hw_offload,
+			.get_copy_dscp = _get_copy_dscp,
 		},
 		.name = strdup(name),
 		.options = data->options,
 		.updown = strdupnull(data->updown),
 		.reqid = data->reqid,
+		.if_id_in = data->if_id_in,
+		.if_id_out = data->if_id_out,
 		.mode = data->mode,
 		.start_action = data->start_action,
 		.dpd_action = data->dpd_action,
 		.close_action = data->close_action,
 		.mark_in = data->mark_in,
 		.mark_out = data->mark_out,
+		.set_mark_in = data->set_mark_in,
+		.set_mark_out = data->set_mark_out,
 		.lifetime = data->lifetime,
 		.inactivity = data->inactivity,
 		.tfc = data->tfc,
@@ -674,6 +696,8 @@ child_cfg_t *child_cfg_create(char *name, child_cfg_create_t *data)
 		.other_ts = linked_list_create(),
 		.replay_window = lib->settings->get_int(lib->settings,
 							"%s.replay_window", DEFAULT_REPLAY_WINDOW, lib->ns),
+		.hw_offload = data->hw_offload,
+		.copy_dscp = data->copy_dscp,
 	);
 
 	return &this->public;

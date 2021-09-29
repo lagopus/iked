@@ -172,6 +172,11 @@ struct private_x509_cert_t {
 	chunk_t authKeySerialNumber;
 
 	/**
+	 * Optional OID of an [unsupported] critical extension
+	 */
+	chunk_t critical_extension_oid;
+
+	/**
 	 * Path Length Constraint
 	 */
 	u_char pathLenConstraint;
@@ -369,8 +374,13 @@ static bool parse_otherName(chunk_t *blob, int level0, id_type_t *type)
 				switch (oid)
 				{
 					case OID_XMPP_ADDR:
-						if (!asn1_parse_simple_object(&object, ASN1_UTF8STRING,
+						if (asn1_parse_simple_object(&object, ASN1_UTF8STRING,
 									parser->get_level(parser)+1, "xmppAddr"))
+						{	/* we handle xmppAddr as RFC822 addr */
+							*blob = object;
+							*type = ID_RFC822_ADDR;
+						}
+						else
 						{
 							goto end;
 						}
@@ -704,6 +714,9 @@ static void parse_keyUsage(chunk_t blob, private_x509_cert_t *this)
 		KU_DECIPHER_ONLY =		8,
 	};
 
+	/* to be compliant with RFC 4945 specific KUs have to be included */
+	this->flags &= ~X509_IKE_COMPLIANT;
+
 	if (asn1_unwrap(&blob, &blob) == ASN1_BIT_STRING && blob.len)
 	{
 		int bit, byte, unused = blob.ptr[0];
@@ -724,10 +737,12 @@ static void parse_keyUsage(chunk_t blob, private_x509_cert_t *this)
 						case KU_CRL_SIGN:
 							this->flags |= X509_CRL_SIGN;
 							break;
-						case KU_KEY_CERT_SIGN:
-							/* we use the caBasicConstraint, MUST be set */
 						case KU_DIGITAL_SIGNATURE:
 						case KU_NON_REPUDIATION:
+							this->flags |= X509_IKE_COMPLIANT;
+							break;
+						case KU_KEY_CERT_SIGN:
+							/* we use the caBasicConstraint, MUST be set */
 						case KU_KEY_ENCIPHERMENT:
 						case KU_DATA_ENCIPHERMENT:
 						case KU_KEY_AGREEMENT:
@@ -1381,6 +1396,9 @@ static bool parse_certificate(private_x509_cert_t *this)
 
 	parser = asn1_parser_create(certObjects, this->encoding);
 
+	/* unless we see a keyUsage extension we are compliant with RFC 4945 */
+	this->flags |= X509_IKE_COMPLIANT;
+
 	while (parser->iterate(parser, &objectID, &object))
 	{
 		u_int level = parser->get_level(parser)+1;
@@ -1938,6 +1956,7 @@ METHOD(certificate_t, destroy, void,
 		chunk_free(&this->authKeyIdentifier);
 		chunk_free(&this->encoding);
 		chunk_free(&this->encoding_hash);
+		chunk_free(&this->critical_extension_oid);
 		if (!this->parsed)
 		{	/* only parsed certificates point these fields to "encoded" */
 			chunk_free(&this->signature);
@@ -2013,6 +2032,8 @@ chunk_t build_generalName(identification_t *id)
 
 	switch (id->get_type(id))
 	{
+		case ID_DER_ASN1_GN:
+			return chunk_clone(id->get_encoding(id));
 		case ID_RFC822_ADDR:
 			context = ASN1_CONTEXT_S_1;
 			break;
@@ -2188,6 +2209,7 @@ static bool generate(private_x509_cert_t *cert, certificate_t *sign_cert,
 	chunk_t policyConstraints = chunk_empty, inhibitAnyPolicy = chunk_empty;
 	chunk_t ikeIntermediate = chunk_empty, msSmartcardLogon = chunk_empty;
 	chunk_t ipAddrBlocks = chunk_empty, sig_scheme = chunk_empty;
+	chunk_t criticalExtension = chunk_empty;
 	identification_t *issuer, *subject;
 	chunk_t key_info;
 	hasher_t *hasher;
@@ -2555,17 +2577,25 @@ static bool generate(private_x509_cert_t *cert, certificate_t *sign_cert,
 						chunk_from_thing(cert->inhibit_any))));
 	}
 
+	if (cert->critical_extension_oid.len > 0)
+	{
+		criticalExtension = asn1_wrap(ASN1_SEQUENCE, "mmm",
+					asn1_simple_object(ASN1_OID, cert->critical_extension_oid),
+					asn1_simple_object(ASN1_BOOLEAN, chunk_from_chars(0xFF)),
+					asn1_simple_object(ASN1_OCTET_STRING, chunk_empty));
+	}
+
 	if (basicConstraints.ptr || subjectAltNames.ptr || authKeyIdentifier.ptr ||
 		crlDistributionPoints.ptr || nameConstraints.ptr || ipAddrBlocks.ptr)
 	{
 		extensions = asn1_wrap(ASN1_CONTEXT_C_3, "m",
-						asn1_wrap(ASN1_SEQUENCE, "mmmmmmmmmmmmmm",
+						asn1_wrap(ASN1_SEQUENCE, "mmmmmmmmmmmmmmm",
 							basicConstraints, keyUsage, subjectKeyIdentifier,
 							authKeyIdentifier, subjectAltNames,
 							extendedKeyUsage, crlDistributionPoints,
 							authorityInfoAccess, nameConstraints, certPolicies,
 							policyMappings, policyConstraints, inhibitAnyPolicy,
-							ipAddrBlocks));
+							ipAddrBlocks, criticalExtension));
 	}
 
 	cert->tbsCertificate = asn1_wrap(ASN1_SEQUENCE, "mmccmcmm",
@@ -2848,6 +2878,9 @@ x509_cert_t *x509_cert_gen(certificate_type_t type, va_list args)
 				continue;
 			case BUILD_DIGEST_ALG:
 				digest_alg = va_arg(args, int);
+				continue;
+			case BUILD_CRITICAL_EXTENSION:
+				cert->critical_extension_oid = chunk_clone(va_arg(args, chunk_t));
 				continue;
 			case BUILD_END:
 				break;

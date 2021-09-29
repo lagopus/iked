@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -81,6 +81,13 @@ struct ha_segments_t {
 	 * @return			TRUE if segment active
 	 */
 	bool (*is_active)(ha_segments_t *this, u_int segment);
+
+	/**
+	 * Return the number of segments
+	 *
+	 * @return			number of segments
+	 */
+	u_int (*count)(ha_segments_t *this);
 
 	/**
 	 * Destroy a ha_segments_t.

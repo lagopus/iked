@@ -42,7 +42,7 @@ IPSEC_STARTER="${IPSEC_DIR}/starter"
 
 export IPSEC_DIR IPSEC_BINDIR IPSEC_SBINDIR IPSEC_CONFDIR IPSEC_PIDDIR IPSEC_SCRIPT IPSEC_VERSION IPSEC_NAME IPSEC_STARTER_PID IPSEC_CHARON_PID
 
-IPSEC_DISTRO="Institute for Internet Technologies and Applications\nUniversity of Applied Sciences Rapperswil, Switzerland"
+IPSEC_DISTRO="University of Applied Sciences Rapperswil, Switzerland"
 
 command_dir="$IPSEC_DIR"
 
@@ -100,8 +100,8 @@ down)
 	shift
 	if [ "$#" -ne 1 ]
 	then
-	    echo "Usage: $IPSEC_SCRIPT down <connection name>"
-	    exit 2
+		echo "Usage: $IPSEC_SCRIPT down <connection name>"
+		exit 2
 	fi
 	rc=7
 	if [ -e $IPSEC_CHARON_PID ]
@@ -115,8 +115,8 @@ down-srcip)
 	shift
 	if [ "$#" -lt 1 ]
 	then
-	    echo "Usage: $IPSEC_SCRIPT down-srcip <start> [<end>]"
-	    exit 2
+		echo "Usage: $IPSEC_SCRIPT down-srcip <start> [<end>]"
+		exit 2
 	fi
 	rc=7
 	if [ -e $IPSEC_CHARON_PID ]
@@ -283,8 +283,8 @@ up)
 	shift
 	if [ "$#" -ne 1 ]
 	then
-	    echo "Usage: $IPSEC_SCRIPT up <connection name>"
-	    exit 2
+		echo "Usage: $IPSEC_SCRIPT up <connection name>"
+		exit 2
 	fi
 	rc=7
 	if [ -e $IPSEC_CHARON_PID ]

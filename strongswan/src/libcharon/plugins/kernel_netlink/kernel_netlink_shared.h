@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2008 Tobias Brunner
- * Hochschule fuer Technik Rapperswil
+ * Copyright (C) 2008-2019 Tobias Brunner
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -32,7 +32,7 @@
 /**
  * General purpose netlink buffer.
  *
- * Some platforms require an enforced aligment to four bytes (e.g. ARM).
+ * Some platforms require an enforced alignment to four bytes (e.g. ARM).
  */
 typedef union {
 	struct nlmsghdr hdr;
@@ -91,6 +91,28 @@ void netlink_add_attribute(struct nlmsghdr *hdr, int rta_type, chunk_t data,
 						   size_t buflen);
 
 /**
+ * Creates an rtattr under which other rtattrs are nested to the given netlink
+ * message.
+ *
+ * The returned pointer has to be passed to netlink_nested_end() after the
+ * nested attributes have been added to the message.
+ *
+ * @param hdr			netlink message
+ * @param buflen		size of full netlink buffer
+ * @param type			RTA type
+ * @return				attribute pointer
+ */
+void *netlink_nested_start(struct nlmsghdr *hdr, size_t buflen, int type);
+
+/**
+ * Updates the length of the given attribute after nested attributes were added.
+ *
+ * @param hdr			netlink message
+ * @param attr			attribute returned from netlink_nested_start()
+ */
+void netlink_nested_end(struct nlmsghdr *hdr, void *attr);
+
+/**
  * Reserve space in a netlink message for given size and type, returning buffer.
  *
  * @param hdr			netlink message
@@ -100,5 +122,12 @@ void netlink_add_attribute(struct nlmsghdr *hdr, int rta_type, chunk_t data,
  * @return				buffer to len bytes of attribute data, NULL on error
  */
 void* netlink_reserve(struct nlmsghdr *hdr, int buflen, int type, int len);
+
+/**
+ * Determine buffer size for received messages (e.g. events).
+ *
+ * @return				buffer size
+ */
+u_int netlink_get_buflen();
 
 #endif /* KERNEL_NETLINK_SHARED_H_ */

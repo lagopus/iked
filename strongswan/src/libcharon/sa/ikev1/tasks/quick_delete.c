@@ -38,6 +38,7 @@
 
 #include <daemon.h>
 #include <encoding/payloads/delete_payload.h>
+#include <sa/ikev1/task_manager_v1.h>
 
 typedef struct private_quick_delete_t private_quick_delete_t;
 
@@ -106,6 +107,10 @@ static bool delete_child(private_quick_delete_t *this, protocol_id_t protocol,
 	}
 
 	rekeyed = child_sa->get_state(child_sa) == CHILD_REKEYED;
+	if (!rekeyed)
+	{
+		rekeyed = ikev1_child_sa_is_redundant(this->ike_sa, child_sa, NULL);
+	}
 	child_sa->set_state(child_sa, CHILD_DELETING);
 
 	my_ts = linked_list_create_from_enumerator(
@@ -135,6 +140,7 @@ static bool delete_child(private_quick_delete_t *this, protocol_id_t protocol,
 	my_ts->destroy(my_ts);
 	other_ts->destroy(other_ts);
 
+	child_sa->set_state(child_sa, CHILD_DELETED);
 	if (!rekeyed)
 	{
 		charon->bus->child_updown(charon->bus, child_sa, FALSE);
@@ -154,7 +160,7 @@ static bool delete_child(private_quick_delete_t *this, protocol_id_t protocol,
 				case ACTION_ROUTE:
 					charon->traps->install(charon->traps,
 									this->ike_sa->get_peer_cfg(this->ike_sa),
-									child_cfg, child_sa->get_reqid(child_sa));
+									child_cfg);
 					break;
 				default:
 					break;

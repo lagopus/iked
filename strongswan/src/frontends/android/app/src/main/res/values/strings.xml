@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Copyright (C) 2012-2017 Tobias Brunner
+    Copyright (C) 2012-2019 Tobias Brunner
     Copyright (C) 2012 Giuliano Grassi
     Copyright (C) 2012 Ralf Sager
     HSR Hochschule fuer Technik Rapperswil
@@ -24,10 +24,18 @@
     <string name="search">Search</string>
     <string name="vpn_not_supported_title">VPN not supported</string>
     <string name="vpn_not_supported">Your device does not support VPN applications.\nPlease contact the manufacturer.</string>
-    <string name="vpn_not_supported_during_lockdown">VPN connections are not supported in lockdown mode.</string>
+    <string name="vpn_not_supported_during_lockdown">VPN connections are not supported if a built-in VPN has the always-on feature enabled.</string>
+    <string name="vpn_not_supported_no_permission">Unable to get permission to create VPN connections. Either because it was denied by the user, or because a different VPN app has the always-on feature enabled.</string>
     <string name="loading">Loading&#8230;</string>
     <string name="profile_not_found">Profile not found</string>
     <string name="strongswan_shortcut">strongSwan shortcut</string>
+    <string name="permanent_notification_name">VPN connection state</string>
+    <string name="permanent_notification_description">Provides information about the VPN connection state and serves as permanent notification to keep the VPN service running in the background.</string>
+
+    <!-- Settings -->
+    <string name="pref_title">Settings</string>
+    <string name="pref_default_vpn_profile">Default VPN profile</string>
+    <string name="pref_default_vpn_profile_mru">Connect to most recently used profile</string>
 
     <!-- Log view -->
     <string name="log_title">Log</string>
@@ -39,6 +47,8 @@
     <string name="no_profiles">No VPN profiles.</string>
     <string name="add_profile">Add VPN profile</string>
     <string name="edit_profile">Edit</string>
+    <string name="copy_profile">Copy</string>
+    <string name="copied_name">%1$s (Copy)</string>
     <string name="delete_profile">Delete</string>
     <string name="select_profiles">Select profiles</string>
     <string name="profiles_deleted">Selected profiles deleted</string>
@@ -63,9 +73,6 @@
     <string name="profile_user_certificate_label">User certificate</string>
     <string name="profile_user_select_certificate_label">Select user certificate</string>
     <string name="profile_user_select_certificate">Select a specific user certificate</string>
-    <string name="profile_user_select_id_label">User identity</string>
-    <string name="profile_user_select_id_init">Select a certificate first</string>
-    <string name="profile_user_select_id_default">Default (%1$s)</string>
     <string name="profile_ca_label">CA certificate</string>
     <string name="profile_ca_auto_label">Select automatically</string>
     <string name="profile_ca_select_certificate_label">Select CA certificate</string>
@@ -75,6 +82,11 @@
     <string name="profile_remote_id_label">Server identity</string>
     <string name="profile_remote_id_hint">Defaults to the configured server. Custom values are explicitly sent to the server and enforced during authentication</string>
     <string name="profile_remote_id_hint_gateway">Defaults to \"%1$s\". Custom values are explicitly sent to the server and enforced during authentication</string>
+    <string name="profile_local_id_label">Client identity</string>
+    <string name="profile_local_id_hint_user">Defaults to the configured username. Custom values may be used if expected/required by the server</string>
+    <string name="profile_local_id_hint_cert">Defaults to the certificate\'s subject identity. Custom values may be used if expected/required by the server. Note that these usually must be confirmed by the certificate (auto-completion is provided for the certificate\'s alternative identities, if any)</string>
+    <string name="profile_dns_servers_label">DNS servers</string>
+    <string name="profile_dns_servers_hint">Custom DNS servers to use when connected to the VPN (separated by spaces, e.g. \"8.8.8.8 2001:4860:4860::8888\"), defaults to those received from the VPN server</string>
     <string name="profile_mtu_label">MTU of the VPN tunnel device</string>
     <string name="profile_mtu_hint">In case the default value is unsuitable for a particular network</string>
     <string name="profile_port_label">Server port</string>
@@ -83,6 +95,14 @@
     <string name="profile_nat_keepalive_hint">Small packets are sent to keep mappings on NAT routers alive if there is no other traffic. In order to save energy the default interval is 45 seconds. Behind NAT routers that remove mappings early this might be too high, try 20 seconds or less in that case.</string>
     <string name="profile_cert_req_label">Send certificate requests</string>
     <string name="profile_cert_req_hint">Certificate requests are sent for all available or selected CA certificates. To reduce the size of the IKE_AUTH message this can be disabled. However, this only works if the server sends its certificate even if it didn\'t receive any certificate requests.</string>
+    <string name="profile_use_ocsp_label">Use OCSP to check certificate</string>
+    <string name="profile_use_ocsp_hint">Use the Online Certificate Status Protocol (OCSP), if available, to check that the server certificate has not been revoked.</string>
+    <string name="profile_use_crl_label">Use CRLs to check certificate</string>
+    <string name="profile_use_crl_hint">Use Certificate Revocation Lists (CRL), if available, to check that the server certificate has not been revoked. CRLs are only used if OCSP doesn\'t yield a result.</string>
+    <string name="profile_strict_revocation_label">Use strict revocation checking</string>
+    <string name="profile_strict_revocation_hint">In strict mode the authentication will fail not only if the server certificate has been revoked but also if its status is unknown (e.g. because OCSP failed and no valid CRL was available).</string>
+    <string name="profile_rsa_pss_label">Use RSA/PSS signatures</string>
+    <string name="profile_rsa_pss_hint">Use the stronger PSS encoding instead of the classic PKCS#1 encoding for RSA signatures. Authentication will fail if the server does not support such signatures.</string>
     <string name="profile_split_tunneling_label">Split tunneling</string>
     <string name="profile_split_tunneling_intro">By default, the client will route all network traffic through the VPN, unless the server narrows the subnets when the connection is established, in which case only traffic the server allows will be routed via VPN (by default, all other traffic is routed as if there was no VPN).</string>
     <string name="profile_split_tunnelingv4_title">Block IPv4 traffic not destined for the VPN</string>
@@ -112,6 +132,7 @@
     <string name="profile_import_exists">This VPN profile already exists, its current settings will be replaced.</string>
     <string name="profile_cert_import">Import certificate from VPN profile</string>
     <string name="profile_cert_alias">Certificate for \"%1$s\"</string>
+    <string name="profile_profile_id">Profile ID</string>
     <!-- Warnings/Notifications in the details view -->
     <string name="alert_text_no_input_gateway">A value is required to initiate the connection</string>
     <string name="alert_text_no_input_username">Please enter your username </string>
@@ -119,6 +140,7 @@
     <string name="alert_text_nocertfound">Please select one or activate <i>Select automatically</i></string>
     <string name="alert_text_out_of_range">Please enter a number in the range from %1$d - %2$d</string>
     <string name="alert_text_no_subnets">Please enter valid subnets and/or IP addresses, separated by spaces</string>
+    <string name="alert_text_no_ips">Please enter valid IP addresses, separated by spaces</string>
     <string name="alert_text_no_proposal">Please enter a valid list of algorithms, separated by hyphens</string>
     <string name="tnc_notice_title">EAP-TNC may affect your privacy</string>
     <string name="tnc_notice_subtitle">Device data is sent to the server operator</string>
@@ -154,6 +176,7 @@
     <string name="state_disconnecting">Disconnecting&#8230;</string>
     <string name="state_disabled">No active VPN</string>
     <string name="state_error">Error</string>
+    <string name="dismiss">Dismiss</string>
 
     <!-- IMC state fragment -->
     <string name="imc_state_label">Assessment:</string>
@@ -169,13 +192,15 @@
     <string name="login_username">Username</string>
     <string name="login_password">Password</string>
     <string name="login_confirm">Connect</string>
-    <string name="error_introduction">Failed to establish VPN:</string>
-    <string name="error_lookup_failed">Server address lookup failed.</string>
-    <string name="error_unreachable">Server is unreachable.</string>
-    <string name="error_peer_auth_failed">Verifying server authentication failed.</string>
-    <string name="error_auth_failed">User authentication failed.</string>
-    <string name="error_assessment_failed">Security assessment failed.</string>
-    <string name="error_generic">Unspecified failure while connecting.</string>
+    <string name="error_format">Failed to establish VPN: %1$s.</string>
+    <string name="error_lookup_failed">Server address lookup failed</string>
+    <string name="error_unreachable">Server is unreachable</string>
+    <string name="error_peer_auth_failed">Verifying server authentication failed</string>
+    <string name="error_auth_failed">User authentication failed</string>
+    <string name="error_assessment_failed">Security assessment failed</string>
+    <string name="error_generic">Unspecified failure while connecting</string>
+    <string name="error_password_missing">Password unavailable</string>
+    <string name="error_certificate_unavailable">Client certificate unavailable</string>
     <string name="vpn_connected">VPN connected</string>
     <string name="vpn_profile_connected">This VPN profile is currently connected!</string>
     <string name="reconnect">Reconnect</string>
@@ -184,5 +209,16 @@
     <string name="disconnect_question">Disconnect VPN?</string>
     <string name="disconnect_active_connection">This will disconnect the active VPN connection!</string>
     <string name="connect">Connect</string>
+    <string name="retry">Retry</string>
+    <plurals name="retry_in">
+        <item quantity="one">Retry in %1$d second</item>
+        <item quantity="other">Retry in %1$d seconds</item>
+    </plurals>
+    <string name="cancel_retry">Cancel retry</string>
+
+    <!-- Quick Settings tile -->
+    <string name="tile_default">Toggle VPN</string>
+    <string name="tile_connect">Connect VPN</string>
+    <string name="tile_disconnect">Disconnect VPN</string>
 
 </resources>
